@@ -92,7 +92,7 @@ jobs:
       - name: Test the vendored package
         # Node is already on the runner image, so this needs no setup-node step.
         run: node --test tests/js/pkg.js
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dynachaos-wasm-pkg
           path: pkg/
