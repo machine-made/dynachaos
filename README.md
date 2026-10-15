@@ -249,9 +249,10 @@ A viewport below 480 CSS px — a phone in portrait — keeps the PNG until the
 reader presses interact. `prefers-reduced-data` does not download the
 WebAssembly module at all.
 
-Telemetry (per-tile milliseconds, worker count, tiles in flight) is off
-unless the URL has `?debug=1`, the hash contains `#live-debug`, or
-`localStorage.dynachaosDebug` is set. The PNG and the committed `.npz`
+Telemetry (per-tile milliseconds, worker count, tiles in flight, and a one-line
+debug report with a copy button under each live figure) is off unless the URL
+has `?debug=1`, the hash contains `#live-debug`, or `localStorage.dynachaosDebug`
+is set. The PNG and the committed `.npz`
 caches stay the record of what the paper computed; a live view is a
 companion, not a replacement. See
 [docs/wasm-architecture.md](docs/wasm-architecture.md).

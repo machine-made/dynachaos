@@ -40,6 +40,13 @@ import {
   torusMapKind,
   torusRequest,
   torusTrace,
+  attachDebugReportBox,
+  createDebugTracker,
+  createLongTaskObserver,
+  formatDebugReportLine,
+  isLongTaskSupported,
+  median,
+  shortUserAgent,
 } from "../../site-src/live/live-figure.js";
 import {
   HEADER,
@@ -1577,4 +1584,302 @@ test("a chunk that resolves after a parameter change is dropped", async () => {
   await tick();
   assert.equal(fig.store.field.nRows, 2);
   assert.equal(fig.store.field.values[0], 0.7);
+});
+
+test("shortUserAgent extracts browser and major version without spaces", () => {
+  const chrome = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/142.0.7444.175 Safari/537.36";
+  assert.equal(shortUserAgent(chrome), "Chrome/142");
+
+  const desktopSafari = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+  assert.equal(shortUserAgent(desktopSafari), "Safari/17.5");
+
+  const mobileSafari = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1";
+  assert.equal(shortUserAgent(mobileSafari), "MobileSafari/17.5");
+
+  const firefox = "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0";
+  assert.equal(shortUserAgent(firefox), "Firefox/130");
+
+  const edge = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0";
+  assert.equal(shortUserAgent(edge), "Edge/126");
+
+  assert.equal(shortUserAgent(""), "unknown");
+  assert.equal(shortUserAgent("   "), "unknown");
+  assert.equal(shortUserAgent(null), "unknown");
+  assert.ok(!/\s/.test(shortUserAgent(chrome)));
+});
+
+test("median computes standard midpoint of odd, even, and empty arrays", () => {
+  assert.equal(median([10, 30, 20]), 20);
+  assert.equal(median([10, 20, 30, 40]), 25);
+  assert.equal(median([5]), 5);
+  assert.equal(median([]), 0);
+  assert.equal(median(null), 0);
+  assert.equal(median([89.7, 91.5, 93.4, 92.0, 93.8]), 92.0);
+});
+
+test("isLongTaskSupported checks PerformanceObserver.supportedEntryTypes", () => {
+  assert.ok(isLongTaskSupported({ supportedEntryTypes: ["longtask", "paint"] }));
+  assert.ok(!isLongTaskSupported({ supportedEntryTypes: ["paint", "resource"] }));
+  assert.ok(!isLongTaskSupported({ supportedEntryTypes: null }));
+  assert.ok(!isLongTaskSupported(undefined));
+});
+
+test("createLongTaskObserver returns n/a where unsupported and never 0", () => {
+  const unsupported = { supportedEntryTypes: ["paint", "resource"] };
+  const obs = createLongTaskObserver(unsupported);
+  assert.equal(obs.supported, false);
+  assert.equal(obs.count(), "n/a");
+  assert.notEqual(obs.count(), 0);
+});
+
+test("createLongTaskObserver counts entries over 50 ms when supported", () => {
+  let registeredCallback = null;
+  class FakeObs {
+    static supportedEntryTypes = ["longtask"];
+    constructor(cb) {
+      registeredCallback = cb;
+      this.observed = null;
+    }
+    observe(opts) {
+      this.observed = opts;
+    }
+    disconnect() {}
+    takeRecords() {
+      return [{ duration: 75 }];
+    }
+  }
+  const obs = createLongTaskObserver(FakeObs);
+  assert.equal(obs.supported, true);
+  registeredCallback({
+    getEntries: () => [
+      { duration: 40 }, // under 50 ms, ignored
+      { duration: 60 }, // over 50 ms, counted
+      { duration: 50 }, // not over 50 ms, ignored
+      { duration: 120 }, // over 50 ms, counted
+    ],
+  });
+  // 2 entries from getEntries + 1 entry from takeRecords (75ms)
+  assert.equal(obs.count(), 3);
+});
+
+test("formatDebugReportLine produces one line with six fields in order", () => {
+  const line = formatDebugReportLine({
+    figId: "fig:arnold_tongues",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/142.0.7444.175 Safari/537.36",
+    workerCount: 8,
+    elapsedMs: 6160.4,
+    medianTileMs: 89.702,
+    longTasks: 0,
+  });
+  const fields = line.split(" ");
+  assert.equal(fields.length, 6);
+  assert.equal(fields[0], "fig:arnold_tongues");
+  assert.equal(fields[1], "Chrome/142");
+  assert.equal(fields[2], "8");
+  assert.equal(fields[3], "6160");
+  assert.equal(fields[4], "89.7");
+  assert.equal(fields[5], "0");
+
+  const safariLine = formatDebugReportLine({
+    figId: "fig:devils_staircase",
+    ua: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    workerCount: 4,
+    elapsedMs: 1200,
+    medianTileMs: 45,
+    longTasks: "n/a",
+  });
+  const sFields = safariLine.split(" ");
+  assert.equal(sFields.length, 6);
+  assert.equal(sFields[5], "n/a");
+});
+
+test("attachDebugReportBox creates DOM elements and copy button writes to clipboard", async () => {
+  const elements = [];
+  class MockNode {
+    constructor(tag) {
+      this.tagName = tag;
+      this.className = "";
+      this.textContent = "";
+      this.type = "";
+      this.children = [];
+      this.listeners = {};
+      elements.push(this);
+    }
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    }
+    remove() {
+      this.removed = true;
+    }
+    addEventListener(type, fn) {
+      this.listeners[type] = fn;
+    }
+    querySelector(sel) {
+      if (sel === ".fig-body") return this;
+      return this.children.find((c) => c.className === sel.replace(".", "")) || null;
+    }
+  }
+  let copiedText = null;
+  const mockDoc = {
+    createElement: (tag) => new MockNode(tag),
+    defaultView: {
+      navigator: {
+        clipboard: {
+          writeText: async (t) => {
+            copiedText = t;
+          },
+        },
+      },
+    },
+  };
+  const fig = new MockNode("figure");
+  const box = attachDebugReportBox(fig, "fig:test Chrome/142 8 100 20 0", mockDoc);
+  assert.ok(box);
+  assert.equal(box.className, "live-debug-report");
+  const lineEl = box.querySelector(".live-debug-line");
+  const copyBtn = box.querySelector(".live-debug-copy");
+  assert.ok(lineEl);
+  assert.ok(copyBtn);
+  assert.equal(lineEl.textContent, "fig:test Chrome/142 8 100 20 0");
+  assert.equal(copyBtn.textContent, "copy");
+
+  // Click copy button: calls clipboard.writeText
+  await copyBtn.listeners.click();
+  assert.equal(copiedText, "fig:test Chrome/142 8 100 20 0");
+});
+
+test("attachDebugReportBox copy button selects text when clipboard is refused or absent", async () => {
+  class MockNode {
+    constructor(tag) {
+      this.tagName = tag;
+      this.className = "";
+      this.textContent = "";
+      this.type = "";
+      this.children = [];
+      this.listeners = {};
+    }
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    }
+    remove() {}
+    addEventListener(type, fn) {
+      this.listeners[type] = fn;
+    }
+    querySelector(sel) {
+      if (sel === ".fig-body") return this;
+      return this.children.find((c) => c.className === sel.replace(".", "")) || null;
+    }
+  }
+  let selectedNode = null;
+  const mockDocRefused = {
+    createElement: (tag) => new MockNode(tag),
+    createRange: () => ({
+      selectNodeContents: (n) => {
+        selectedNode = n;
+      },
+    }),
+    defaultView: {
+      getSelection: () => ({
+        removeAllRanges: () => {},
+        addRange: () => {},
+      }),
+      navigator: {
+        clipboard: {
+          writeText: async () => {
+            throw new Error("clipboard permission denied");
+          },
+        },
+      },
+    },
+  };
+  const fig = new MockNode("figure");
+  const box = attachDebugReportBox(fig, "fig:test Chrome/142 8 100 20 0", mockDocRefused);
+  const copyBtn = box.querySelector(".live-debug-copy");
+  await copyBtn.listeners.click();
+  assert.ok(selectedNode);
+  assert.equal(selectedNode.textContent, "fig:test Chrome/142 8 100 20 0");
+
+  // Also test absent clipboard
+  selectedNode = null;
+  const mockDocAbsent = {
+    createElement: (tag) => new MockNode(tag),
+    createRange: () => ({
+      selectNodeContents: (n) => {
+        selectedNode = n;
+      },
+    }),
+    defaultView: {
+      getSelection: () => ({
+        removeAllRanges: () => {},
+        addRange: () => {},
+      }),
+      navigator: {},
+    },
+  };
+  const box2 = attachDebugReportBox(fig, "fig:test2 Chrome/142 8 100 20 0", mockDocAbsent);
+  const copyBtn2 = box2.querySelector(".live-debug-copy");
+  await copyBtn2.listeners.click();
+  assert.ok(selectedNode);
+  assert.equal(selectedNode.textContent, "fig:test2 Chrome/142 8 100 20 0");
+});
+
+test("createDebugTracker: debugEnabled false creates no observer and no DOM box", () => {
+  let obsCreated = false;
+  class MockObs {
+    static supportedEntryTypes = ["longtask"];
+    constructor() {
+      obsCreated = true;
+    }
+    observe() {}
+    disconnect() {}
+  }
+  const tracker = createDebugTracker({
+    fig: null,
+    interactT0: 100,
+    debugEnabled: false,
+    PerformanceObserverImpl: MockObs,
+  });
+  tracker.onFirstPaintComplete({ workerCount: 8, tileTimes: [10, 20] });
+  assert.equal(obsCreated, false);
+});
+
+test("createPaintHandler fires onFirstPaintComplete on the last tile of generation 1", () => {
+  const store = createStore();
+  let inFlight = [{ id: "0:0:0", generation: 1 }];
+  let queueDepth = 0;
+  const pool = {
+    getState: () => ({
+      generation: 1,
+      viewport: VIEWPORT,
+      queueDepth,
+      inFlight,
+    }),
+  };
+  const raster = { tileWorld };
+  let completedInfo = null;
+  const onPaint = createPaintHandler({
+    store,
+    raster,
+    getPool: () => pool,
+    getPlot: () => ({ redraw: () => {} }),
+    onFirstPaintComplete: (info) => {
+      completedInfo = info;
+    },
+  });
+
+  // Tile 1 arrives, but inFlight still has work
+  inFlight = [{ id: "1:0:0", generation: 1 }];
+  queueDepth = 1;
+  onPaint({ id: "0:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 42 });
+  assert.equal(completedInfo, null);
+
+  // Last tile arrives: queueDepth is 0 and inFlight is empty
+  queueDepth = 0;
+  inFlight = [];
+  onPaint({ id: "1:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 58 });
+  assert.ok(completedInfo);
+  assert.deepEqual(completedInfo.tileTimes, [42, 58]);
+  assert.equal(completedInfo.generation, 1);
 });

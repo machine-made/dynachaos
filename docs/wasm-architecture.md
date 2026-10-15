@@ -145,7 +145,10 @@ because live colour is a fixed viridis ramp.
 Debug telemetry (`?debug=1`, `#live-debug` in the hash, or
 `localStorage.dynachaosDebug`) logs per-tile compute milliseconds, worker
 count, queue depth, dropped generations (viewport changes that abandoned
-work), and dropped tiles (stale or error results). It is off by default.
+work), and dropped tiles (stale or error results), and shows a copyable one-line
+report under each live figure (figure id, short user agent, worker count,
+time to first full paint, median tile time, and main-thread tasks over 50 ms).
+It is off by default.
 A hidden tab pauses new tile issue in `pool.js` and new kernel calls in
 the shared runner (`visibility.js`, used by every direct-call figure).
 Work already in flight may finish; a result whose generation is no longer

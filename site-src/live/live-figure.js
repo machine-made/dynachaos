@@ -286,11 +286,14 @@ export function createStore(params = LIVE_ARNOLD) {
  * @param {(store: object) => void} [deps.onStore]
  * @returns {(cmd: object) => void}
  */
-export function createPaintHandler({ store, raster, getPool, getPlot, onStore }) {
+export function createPaintHandler({ store, raster, getPool, getPlot, onStore, onFirstPaintComplete }) {
   let paintSeq = 0;
+  let firstPaintDone = false;
+  const firstPaintTileTimes = [];
   return function onPaint(cmd) {
-    const state = getPool().getState();
-    if (cmd.generation !== state.generation) return;
+    const pool = getPool();
+    const state = pool ? pool.getState() : null;
+    if (!state || cmd.generation !== state.generation) return;
     const world = raster.tileWorld(cmd.id, state.viewport);
     if (!world) return;
     const rec = {
@@ -310,6 +313,20 @@ export function createPaintHandler({ store, raster, getPool, getPlot, onStore })
     if (cmd.header && Number.isFinite(cmd.header[3])) store.nIter = cmd.header[3];
     if (onStore) onStore(store);
     getPlot().redraw();
+    if (!firstPaintDone) {
+      if (Number.isFinite(cmd.computeMs)) {
+        firstPaintTileTimes.push(cmd.computeMs);
+      }
+      if (state.queueDepth === 0 && Array.isArray(state.inFlight) && state.inFlight.length === 0) {
+        firstPaintDone = true;
+        if (onFirstPaintComplete) {
+          onFirstPaintComplete({
+            tileTimes: firstPaintTileTimes.slice(),
+            generation: cmd.generation,
+          });
+        }
+      }
+    }
   };
 }
 
@@ -812,7 +829,10 @@ function createKernelRunner({ store, getState, request, fold, call, onTrace, onE
     const req = request(getState());
     const mySeq = ++seq;
     try {
+      const t0 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
       const tile = await call(req);
+      const t1 = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+      const computeMs = Math.max(0, t1 - t0);
       ready = true;
       if (mySeq !== seq) return; // a newer request superseded this one
       const trace = fold(tile, req);
@@ -829,7 +849,7 @@ function createKernelRunner({ store, getState, request, fold, call, onTrace, onE
       }
       store.generation = mySeq;
       store.painted = trace.x.length;
-      if (onTrace) onTrace(store, trace, req);
+      if (onTrace) onTrace(store, trace, req, computeMs);
     } catch (err) {
       if (onError) onError(err);
     }
@@ -1597,10 +1617,10 @@ export function createSpacetimeFigure({
       return { x: [], y: [], field };
     },
     call,
-    onTrace: (s, trace, req) => {
+    onTrace: (s, trace, req, computeMs) => {
       if (!trace.field) return;
       publish(trace.field);
-      if (onField) onField(s, trace.field, req);
+      if (onField) onField(s, trace.field, req, computeMs);
     },
     onError,
     document: doc,
@@ -1717,5 +1737,278 @@ export function createSpacetimeFigure({
       unwatchPlay();
       runner.destroy();
     },
+  };
+}
+
+/**
+ * Short user agent for debug reporting: browser and version, without whitespace.
+ *
+ * @param {string} [ua]
+ * @returns {string}
+ */
+export function shortUserAgent(ua = (typeof navigator !== "undefined" ? navigator.userAgent : "")) {
+  if (typeof ua !== "string" || !ua.trim()) return "unknown";
+  const edge = ua.match(/Edg(?:e|A|iOS)?\/(\d+)/);
+  if (edge) return `Edge/${edge[1]}`;
+  const version = ua.match(/Version\/(\d+(?:\.\d+)?)/);
+  const chrome = ua.match(/(?:HeadlessChrome|Chrome|CriOS)\/(\d+)/);
+  if (version && /Safari/.test(ua) && !chrome) {
+    const isMobile = /Mobile/.test(ua) || /iPhone|iPad/.test(ua);
+    return isMobile ? `MobileSafari/${version[1]}` : `Safari/${version[1]}`;
+  }
+  if (chrome) return `Chrome/${chrome[1]}`;
+  const ff = ua.match(/(?:Firefox|FxiOS)\/(\d+)/);
+  if (ff) return `Firefox/${ff[1]}`;
+  const first = ua.trim().split(/\s+/)[0] || "unknown";
+  return first.slice(0, 30);
+}
+
+/**
+ * Standard median of an array of numeric values.
+ *
+ * @param {number[]} values
+ * @returns {number}
+ */
+export function median(values) {
+  if (!Array.isArray(values) || values.length === 0) return 0;
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+/**
+ * True when the PerformanceObserver interface supports the "longtask" entry type.
+ *
+ * @param {typeof PerformanceObserver} [PerformanceObserverImpl]
+ * @returns {boolean}
+ */
+export function isLongTaskSupported(PerformanceObserverImpl = globalThis.PerformanceObserver) {
+  try {
+    if (!PerformanceObserverImpl) return false;
+    const types = PerformanceObserverImpl.supportedEntryTypes;
+    if (Array.isArray(types)) {
+      return types.includes("longtask");
+    }
+  } catch {}
+  return false;
+}
+
+/**
+ * Start a longtask PerformanceObserver if supported. Where unsupported,
+ * count() returns "n/a" (Safari). Never 0 where unsupported.
+ *
+ * @param {typeof PerformanceObserver} [PerformanceObserverImpl]
+ * @returns {{ supported: boolean, count: () => number | "n/a", disconnect: () => void }}
+ */
+export function createLongTaskObserver(PerformanceObserverImpl = globalThis.PerformanceObserver) {
+  if (!isLongTaskSupported(PerformanceObserverImpl)) {
+    return {
+      supported: false,
+      count: () => "n/a",
+      disconnect: () => {},
+    };
+  }
+  let count = 0;
+  let observer = null;
+  function drain(records) {
+    if (records) {
+      for (const entry of records) {
+        if (entry && Number.isFinite(entry.duration) && entry.duration > 50) {
+          count++;
+        }
+      }
+    }
+  }
+  try {
+    observer = new PerformanceObserverImpl((list) => {
+      drain(list.getEntries());
+    });
+    observer.observe({ entryTypes: ["longtask"] });
+  } catch {
+    return {
+      supported: false,
+      count: () => "n/a",
+      disconnect: () => {},
+    };
+  }
+  return {
+    supported: true,
+    count: () => {
+      if (observer && typeof observer.takeRecords === "function") {
+        drain(observer.takeRecords());
+      }
+      return count;
+    },
+    disconnect: () => {
+      if (observer) {
+        try {
+          if (typeof observer.takeRecords === "function") {
+            drain(observer.takeRecords());
+          }
+          observer.disconnect();
+        } catch {}
+        observer = null;
+      }
+    },
+  };
+}
+
+/**
+ * One plain-text line holding the six fields in order: figure id, short user agent,
+ * worker count, ms from interact to first full paint, median tile ms, and number
+ * of main-thread tasks over 50 ms since interact.
+ *
+ * @param {object} fields
+ * @param {string} fields.figId
+ * @param {string} [fields.ua]
+ * @param {number} fields.workerCount
+ * @param {number} fields.elapsedMs
+ * @param {number} fields.medianTileMs
+ * @param {number | string} fields.longTasks
+ * @returns {string}
+ */
+export function formatDebugReportLine({
+  figId,
+  ua,
+  workerCount,
+  elapsedMs,
+  medianTileMs,
+  longTasks,
+}) {
+  const id = typeof figId === "string" ? figId : "";
+  const shortUa = shortUserAgent(ua);
+  const workers = Number.isFinite(workerCount) ? Math.max(0, Math.floor(workerCount)) : 0;
+  const elapsed = Number.isFinite(elapsedMs) ? Math.max(0, Math.round(elapsedMs)) : 0;
+  const med = Number.isFinite(medianTileMs) ? Math.round(medianTileMs * 10) / 10 : 0;
+  const tasks =
+    typeof longTasks === "number" && Number.isFinite(longTasks)
+      ? Math.max(0, Math.floor(longTasks))
+      : longTasks === "n/a"
+      ? "n/a"
+      : longTasks != null
+      ? String(longTasks)
+      : "n/a";
+  return `${id} ${shortUa} ${workers} ${elapsed} ${med} ${tasks}`;
+}
+
+/**
+ * Attach the debug report box and copy button under a figure.
+ *
+ * @param {Element} fig
+ * @param {string} lineText
+ * @param {Document} [doc]
+ * @returns {Element|null}
+ */
+export function attachDebugReportBox(fig, lineText, doc = globalThis.document) {
+  if (!fig || !doc) return null;
+  const body = (fig.querySelector && fig.querySelector(".fig-body")) || fig;
+  const oldBox = body.querySelector ? body.querySelector(".live-debug-report") : null;
+  if (oldBox) oldBox.remove();
+
+  const box = doc.createElement("div");
+  box.className = "live-debug-report";
+
+  const lineEl = doc.createElement("span");
+  lineEl.className = "live-debug-line";
+  lineEl.textContent = lineText;
+  box.appendChild(lineEl);
+
+  const copyBtn = doc.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "live-debug-copy";
+  copyBtn.textContent = "copy";
+  box.appendChild(copyBtn);
+
+  copyBtn.addEventListener("click", async () => {
+    let copied = false;
+    const nav = (doc.defaultView && doc.defaultView.navigator) || globalThis.navigator;
+    try {
+      if (nav && nav.clipboard && typeof nav.clipboard.writeText === "function") {
+        await nav.clipboard.writeText(lineText);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+    if (!copied) {
+      try {
+        const win = doc.defaultView || globalThis;
+        const sel = win.getSelection ? win.getSelection() : null;
+        if (sel && doc.createRange) {
+          const range = doc.createRange();
+          range.selectNodeContents(lineEl);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      } catch {}
+    }
+  });
+
+  body.appendChild(box);
+  return box;
+}
+
+/**
+ * Coordinate debug telemetry and DOM reporting for one figure session.
+ *
+ * @param {object} deps
+ * @param {Element} deps.fig
+ * @param {number} deps.interactT0
+ * @param {boolean} [deps.debugEnabled]
+ * @param {typeof PerformanceObserver} [deps.PerformanceObserverImpl]
+ * @param {Document} [deps.doc]
+ * @returns {{ onFirstPaintComplete: (info: { workerCount: number, tileTimes: number[] }) => void, destroy: () => void }}
+ */
+export function createDebugTracker({
+  fig,
+  interactT0,
+  debugEnabled = false,
+  PerformanceObserverImpl = globalThis.PerformanceObserver,
+  doc = globalThis.document,
+}) {
+  if (!debugEnabled) {
+    return {
+      onFirstPaintComplete: () => {},
+      destroy: () => {},
+    };
+  }
+
+  const observer = createLongTaskObserver(PerformanceObserverImpl);
+  let done = false;
+
+  function onFirstPaintComplete({ workerCount = 0, tileTimes = [] } = {}) {
+    if (done) return;
+    done = true;
+    const now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    const elapsedMs = Math.max(0, now - interactT0);
+    const medianTileMs = median(tileTimes);
+    const longTasks = observer.count();
+    observer.disconnect();
+
+    const lineText = formatDebugReportLine({
+      figId: fig ? fig.id : "",
+      ua:
+        (doc && doc.defaultView && doc.defaultView.navigator && doc.defaultView.navigator.userAgent) ||
+        (typeof navigator !== "undefined" ? navigator.userAgent : ""),
+      workerCount,
+      elapsedMs,
+      medianTileMs,
+      longTasks,
+    });
+
+    if (fig && doc) {
+      attachDebugReportBox(fig, lineText, doc);
+      fig._debugReport = lineText;
+    }
+  }
+
+  function destroy() {
+    observer.disconnect();
+  }
+
+  return {
+    onFirstPaintComplete,
+    destroy,
   };
 }

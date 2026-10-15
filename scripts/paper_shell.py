@@ -366,6 +366,14 @@ canvas.plot.live{touch-action:none;}
   color:var(--ink-mid);font-family:var(--mono);font-size:0.6rem;letter-spacing:0.08em;
   text-transform:uppercase;padding:0.24rem 0.45rem;cursor:pointer;transition:all .15s;}
 .live-presets button:hover{color:var(--chaotic);border-color:var(--chaotic);}
+.live-debug-report{display:flex;align-items:center;justify-content:space-between;gap:0.6rem;
+  margin:0;padding:0.3rem 0.8rem 0.6rem;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.04em;
+  color:var(--ink-low);border-top:1px dashed var(--rule);}
+.live-debug-line{word-break:break-all;white-space:normal;flex:1;}
+.live-debug-copy{appearance:none;background:none;border:1px solid var(--rule);border-radius:3px;
+  color:var(--ink-mid);font-family:var(--mono);font-size:0.6rem;letter-spacing:0.08em;
+  padding:0.15rem 0.4rem;cursor:pointer;flex-shrink:0;}
+.live-debug-copy:hover{color:var(--chaotic);border-color:var(--chaotic);}
 /* research-arc overview: a timeline, not a table */
 figure.arc{background:var(--raised);}
 .arc-track{list-style:none;margin:0;padding:1.4rem 1rem 1.2rem;display:grid;
@@ -1702,16 +1710,17 @@ function unmountPlot(fig){
   fig._plots=[];
   if(fig._live&&fig._live.destroy){try{fig._live.destroy();}catch(e){}}
   if(fig._pool){fig._pool.destroy();fig._pool=null;}
+  if(fig._debugTracker){try{fig._debugTracker.destroy();}catch(e){}fig._debugTracker=null;}
   fig._live=null;
   const body=fig.querySelector(".fig-body");
-  body.querySelectorAll(".plot-wrap,.hint").forEach(n=>n.remove());
+  if(body) body.querySelectorAll(".plot-wrap,.hint,.live-debug-report").forEach(n=>n.remove());
 }
 
 function liveModuleUrl(name){
   return new URL("live/"+name, document.baseURI).href;
 }
 
-async function mountLive(fig){
+async function mountLive(fig, opts){
   const body=fig.querySelector(".fig-body");
   const [poolMod, raster, point, liveFigure, paramsMod]=await Promise.all([
     import(liveModuleUrl("pool.js")),
@@ -1720,27 +1729,34 @@ async function mountLive(fig){
     import(liveModuleUrl("live-figure.js")),
     import(liveModuleUrl("params.js")),
   ]);
+  const interactT0=(opts&&Number.isFinite(opts.interactT0))?opts.interactT0:performance.now();
+  const debugTracker=liveFigure.createDebugTracker({
+    fig,
+    interactT0,
+    debugEnabled:poolMod.debugEnabled()
+  });
+  fig._debugTracker=debugTracker;
   const fc=fig.querySelector("figcaption");
   let capText=fc?fc.textContent.trim():"";
   capText=capText.replace(/^Figure\s*\d+\.\s*/i,"");
   if(fig.dataset.live==="devils_staircase"){
-    await mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMod,capText});
+    await mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMod,capText,debugTracker});
     return;
   }
   if(fig.dataset.live==="delayed_logistic_attractors"){
-    await mountAttractors(fig,body,{liveFigure,paramsMod,capText});
+    await mountAttractors(fig,body,{liveFigure,paramsMod,capText,debugTracker});
     return;
   }
   if(fig.dataset.live==="torus_doubling_attractors"){
-    await mountTorus(fig,body,{liveFigure,paramsMod,capText});
+    await mountTorus(fig,body,{liveFigure,paramsMod,capText,debugTracker});
     return;
   }
   if(fig.dataset.live==="double_staircase"){
-    await mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText});
+    await mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debugTracker});
     return;
   }
   if(fig.dataset.live==="spacetime_diagrams"){
-    await mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText});
+    await mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debugTracker});
     return;
   }
   const title="Rotation number over the circle-map parameter plane";
@@ -1798,7 +1814,15 @@ async function mountLive(fig){
       onCapacityLost(){
         hint.textContent="live figure incomplete: every worker failed. Reload the page to retry";
       },
-      onPaint:liveFigure.createPaintHandler({store,raster,getPool:()=>pool,getPlot:()=>plot})
+      onPaint:liveFigure.createPaintHandler({
+        store,
+        raster,
+        getPool:()=>pool,
+        getPlot:()=>plot,
+        onFirstPaintComplete:({tileTimes})=>{
+          if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:pool.workerCount,tileTimes});
+        }
+      })
     });
     fig._pool=pool;
     const d0=plot.getDomain();
@@ -1884,7 +1908,7 @@ function buildParamControls(specs){
    the image stays and a note says which part is live. This function only
    builds DOM and hands collaborators to live-figure.js; the decisions
    (viewport mapping, trace, debounce, hash) live there for node tests. */
-async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMod,capText}){
+async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_STAIRCASE;
   const title="Rotation number \u03c1(A) at drive frequency D";
   try{
@@ -1966,6 +1990,9 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
         s.trace.x.splice(0,s.trace.x.length,...t.x);
         s.trace.y.splice(0,s.trace.y.length,...t.y);
         fitY();
+      },
+      onFirstPaintComplete:({tileTimes})=>{
+        if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:pool.workerCount,tileTimes});
       }})
     });
     fig._pool=pool;
@@ -2008,7 +2035,7 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
    collapsed by the debounce in live-figure.js and stale results drop by
    sequence number. This function only builds DOM; the request shape, the
    trace fold and the hash live in live-figure.js for node tests. */
-async function mountAttractors(fig,body,{liveFigure,paramsMod,capText}){
+async function mountAttractors(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_ATTRACTORS;
   const title="Delayed logistic map, \u03b1 = 0.3";
   try{
@@ -2034,6 +2061,7 @@ async function mountAttractors(fig,body,{liveFigure,paramsMod,capText}){
       const frag=paramsMod.writeParamsIntoHash(location.hash,fig.id,af.state);
       history.replaceState(null,"",location.pathname+location.search+(frag?"#"+frag:""));
     };
+    let firstTraceDone=false;
     const af=liveFigure.createAttractorFigure({
       params:cfg,
       debounceMs:150,
@@ -2041,7 +2069,7 @@ async function mountAttractors(fig,body,{liveFigure,paramsMod,capText}){
         const f=inputs[name];if(f){f.range.value=v;f.num.value=v;}
         if(name==="D") h.textContent=titleCaps(title+", D = "+v);
       },
-      onTrace:(store,trace,req)=>{
+      onTrace:(store,trace,req,computeMs)=>{
         // panel.traces holds these arrays; replacing them would orphan the
         // plot. The second trace is the analytic fixed point the orbit
         // starts beside — the figure's one vermilion mark.
@@ -2049,6 +2077,10 @@ async function mountAttractors(fig,body,{liveFigure,paramsMod,capText}){
         fpTrace.x.splice(0,fpTrace.x.length,fp);
         fpTrace.y.splice(0,fpTrace.y.length,fp);
         if(plot) plot.redraw();
+        if(!firstTraceDone){
+          firstTraceDone=true;
+          if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:0,tileTimes:Number.isFinite(computeMs)?[computeMs]:[]});
+        }
       },
       onError:()=>{
         hint.textContent="live figure failed: the wasm kernel did not answer. Reload the page to retry";
@@ -2108,7 +2140,7 @@ async function mountAttractors(fig,body,{liveFigure,paramsMod,capText}){
    window. This function only builds DOM; the request shape, the trace
    fold, the map switch and the hash live in live-figure.js for node
    tests. */
-async function mountTorus(fig,body,{liveFigure,paramsMod,capText}){
+async function mountTorus(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_TORUS;
   try{
     const w=document.createElement("div");w.className="plot-wrap";
@@ -2143,6 +2175,7 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText}){
       const frag=paramsMod.writeParamsIntoHash(location.hash,fig.id,tf.state);
       history.replaceState(null,"",location.pathname+location.search+(frag?"#"+frag:""));
     };
+    let firstTraceDone=false;
     const tf=liveFigure.createTorusFigure({
       params:cfg,
       debounceMs:150,
@@ -2152,7 +2185,7 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText}){
         if(f){f.range.value=v;f.num.value=v;}
         if(name==="D") setTitle();
       },
-      onTrace:(store,trace,req)=>{
+      onTrace:(store,trace,req,computeMs)=>{
         // panel.traces holds these arrays; replacing them would orphan the
         // plot. The second trace is the map's unstable fixed point — the
         // figure's one vermilion mark, as on the delayed-logistic figure.
@@ -2160,6 +2193,10 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText}){
         fpTrace.x.splice(0,fpTrace.x.length,fp);
         fpTrace.y.splice(0,fpTrace.y.length,fp);
         if(plot) plot.redraw();
+        if(!firstTraceDone){
+          firstTraceDone=true;
+          if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:0,tileTimes:Number.isFinite(computeMs)?[computeMs]:[]});
+        }
       },
       onError:()=>{
         hint.textContent="live figure failed: the wasm kernel did not answer. Reload the page to retry";
@@ -2222,7 +2259,7 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText}){
    and a drag zoom all move the same pair through live-figure.js's range
    view. This function only builds DOM; the request shape, the trace fold,
    the window sync and the hash live in live-figure.js for node tests. */
-async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText}){
+async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_MODULATED;
   const title="Double devil's staircase";
   try{
@@ -2249,6 +2286,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText}){
       const frag=paramsMod.writeParamsIntoHash(location.hash,fig.id,df.state);
       history.replaceState(null,"",location.pathname+location.search+(frag?"#"+frag:""));
     };
+    let firstTraceDone=false;
     const df=liveFigure.createModulatedFigure({
       params:cfg,
       debounceMs:150,
@@ -2257,8 +2295,12 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText}){
         if(f){if(f.range)f.range.value=v;if(f.num)f.num.value=v;}
         if(name==="eps") setTitle();
       },
-      onTrace:(store,trace,req)=>{
+      onTrace:(store,trace,req,computeMs)=>{
         if(plot) plot.redraw();
+        if(!firstTraceDone){
+          firstTraceDone=true;
+          if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:0,tileTimes:Number.isFinite(computeMs)?[computeMs]:[]});
+        }
       },
       onError:()=>{
         hint.textContent="live figure failed: the wasm kernel did not answer. Reload the page to retry";
@@ -2341,7 +2383,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText}){
    uniform x0). This function only builds DOM; the request shape, the
    field fold, the window trim, the model switch and the hash live in
    live-figure.js for node tests. */
-async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText}){
+async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debugTracker}){
   const cfg=liveFigure.LIVE_SPACETIME;
   const title="Coupled-map lattice space-time";
   try{
@@ -2386,6 +2428,7 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText}){
       const frag=paramsMod.writeParamsIntoHash(location.hash,fig.id,cf.state);
       history.replaceState(null,"",location.pathname+location.search+(frag?"#"+frag:""));
     };
+    let firstTraceDone=false;
     const cf=liveFigure.createSpacetimeFigure({
       params:cfg,
       x0,
@@ -2396,7 +2439,7 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText}){
         if(f){if(f.range)f.range.value=v;if(f.num)f.num.value=v;}
         if(name==="eps") setTitle();
       },
-      onField:(store,field)=>{
+      onField:(store,field,req,computeMs)=>{
         // The site-count control changes the field's width: the published
         // domain itself moves, so the plot rebases instead of zooming.
         if(live.base.x1!==field.nSites||live.base.y1!==field.nRows){
@@ -2404,6 +2447,10 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText}){
           if(plot) plot.rebase();
         }
         if(plot) plot.redraw();
+        if(!firstTraceDone){
+          firstTraceDone=true;
+          if(debugTracker) debugTracker.onFirstPaintComplete({workerCount:0,tileTimes:Number.isFinite(computeMs)?[computeMs]:[]});
+        }
       },
       onError:()=>{
         hint.textContent="live figure failed: the wasm kernel did not answer. Reload the page to retry";
@@ -2487,6 +2534,7 @@ function applyPendingLive(fig){
 
 async function mountInteractive(fig, opts){
   const requested=!!(opts&&opts.requested);
+  const interactT0=(opts&&Number.isFinite(opts.interactT0))?opts.interactT0:performance.now();
   const body=fig.querySelector(".fig-body");
   const src=fig.dataset.src;
   const btn=fig.querySelector(".act-interact");
@@ -2513,7 +2561,7 @@ async function mountInteractive(fig, opts){
         }
       }
       delete fig.dataset.liveHold;
-      await mountLive(fig);
+      await mountLive(fig, { interactT0 });
       applyPendingLive(fig);
       btn.textContent="image";
       return;
@@ -2568,7 +2616,7 @@ async function mountInteractive(fig, opts){
 
 document.querySelectorAll("figure[data-src],figure[data-live]").forEach(fig=>{
   const btn=fig.querySelector(".act-interact");
-  if(btn) btn.addEventListener("click",()=>mountInteractive(fig,{requested:true}));
+  if(btn) btn.addEventListener("click",()=>mountInteractive(fig,{requested:true,interactT0:performance.now()}));
 });
 
 /* ---------------- figure code snippets ---------------- */

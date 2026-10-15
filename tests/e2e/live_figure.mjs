@@ -556,6 +556,31 @@ try {
     100,
   );
   const kernelElapsed = Date.now() - kernelT0;
+  const lineText = await ev(`(() => {
+    const el = ${F}.querySelector(".live-debug-report .live-debug-line");
+    return el ? el.textContent : null;
+  })()`);
+  const reportFields = lineText ? lineText.trim().split(/\s+/) : [];
+  const reportSixFields = reportFields.length === 6;
+  const reportFigId = reportFields[0] === "fig:arnold_tongues";
+  const reportUa = typeof reportFields[1] === "string" && reportFields[1].length > 0;
+  const reportWorkers = Number.isFinite(Number(reportFields[2])) && Number(reportFields[2]) > 0;
+  const reportElapsed = Number.isFinite(Number(reportFields[3])) && Number(reportFields[3]) > 0;
+  const reportMedian = Number.isFinite(Number(reportFields[4])) && Number(reportFields[4]) > 0;
+  const reportTasks = Number.isFinite(Number(reportFields[5])) && Number(reportFields[5]) >= 0;
+  const reportAllNumbers = reportWorkers && reportElapsed && reportMedian && reportTasks;
+  check(
+    "the live debug report box shows six filled fields (all numbers in Chrome)",
+    Boolean(kernelPaintDone && reportSixFields && reportFigId && reportUa && reportAllNumbers),
+    JSON.stringify({ lineText, reportFields }),
+  );
+  const copyClicked = await ev(`(async () => {
+    const btn = ${F}.querySelector(".live-debug-report .live-debug-copy");
+    if (!btn) return false;
+    btn.click();
+    return true;
+  })()`);
+  check("the live debug report copy button is clickable", copyClicked);
   await pullDebug();
   const kernelLogs = debugLogs.filter((line) => line.includes("[dynachaos-live]"));
   const paintedTiles = paintTiles(kernelLogs);
@@ -1751,6 +1776,12 @@ try {
     "telemetry stays off without #live-debug, ?debug=1, or localStorage",
     Boolean(quietPaint && quietLogs.length === 0),
     JSON.stringify({ hash: await ev("location.hash"), search: await ev("location.search"), sample: quietLogs.slice(0, 2) }),
+  );
+  const quietBox = await ev(`!!${F}.querySelector(".live-debug-report")`);
+  check(
+    "without debug mode no debug report box exists in the DOM",
+    !quietBox,
+    JSON.stringify({ quietBox }),
   );
 
   // ---- staircase y-fit and the Greek plot titles ----
