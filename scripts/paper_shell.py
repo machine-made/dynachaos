@@ -134,7 +134,7 @@ CSS = (
 .skip-link:focus{top:0.6rem;}
 
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+html{scroll-behavior:smooth;scroll-padding-top:3.5rem;-webkit-text-size-adjust:100%;}
 body{
   margin:0;background:var(--ground);color:var(--ink);
   font-family:var(--serif);font-size:var(--base);line-height:1.6;
@@ -221,8 +221,14 @@ pre{background:var(--sunken);border:1px solid var(--rule);border-radius:4px;padd
    when the page is scrolled. Grow padding (not font-size) and reserve the
    safe-area inset so the bar always clears it. */
 @media (max-width:36rem){
-  .controls{padding:0.5rem 0.55rem calc(0.5rem + env(safe-area-inset-bottom,0px));}
-  .controls button{padding:0.75rem 0.85rem;min-width:44px;min-height:44px;}
+  html{scroll-padding-top:7rem;}
+  .controls{
+    left:0;right:0;max-width:100%;flex-wrap:wrap;justify-content:flex-end;
+    border-left:none;border-bottom-left-radius:0;
+    padding:0.35rem 0.55rem calc(0.35rem + env(safe-area-inset-bottom,0px));
+    gap:0.2rem 0.15rem;
+  }
+  .controls button{padding:0.5rem 0.6rem;min-width:44px;min-height:44px;}
 }
 
 .progress{position:fixed;top:0;left:0;height:2px;background:var(--chaotic);z-index:61;width:0;transition:width .1s linear;}
@@ -349,7 +355,7 @@ details.fig-code code.fig-snippet{font-family:var(--mono);font-size:0.72rem;line
 .plot-wrap{position:relative;padding:0.35rem;}
 /* text-transform would fold rho/eps/alpha into P/E/A, so app.js applies the
    same caps to the title text one ASCII letter at a time (titleCaps). */
-.plot-title{margin:0 0 0.15rem;text-align:center;font-family:var(--mono);font-size:0.62rem;
+.plot-title{margin:0 6rem 0.15rem;text-align:center;font-family:var(--mono);font-size:0.62rem;
   letter-spacing:0.1em;color:var(--ink-low);}
 canvas.plot{width:100%;display:block;touch-action:pan-y;}
 canvas.plot.live{touch-action:none;}
@@ -511,6 +517,7 @@ table th[style],table td[style]{text-align:left !important;}
   .search-overlay{padding:0;}
   .search-panel{max-width:none;height:100svh;max-height:none;border-radius:0;border:0;}
   .search-input{font-size:16px;padding:1.1rem 1rem;}
+  .citation{white-space:normal;}
 }
 
 /* ------------------------------ help dialog ------------------------------ */

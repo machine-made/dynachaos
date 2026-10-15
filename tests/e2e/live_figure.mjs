@@ -1832,6 +1832,180 @@ try {
     JSON.stringify(gkDom),
   );
 
+  // ---- phone layout (390x844) and responsive controls ----
+  const measureHeaderButtons = async () =>
+    ev(`(() => {
+      const fig = ${F};
+      if (!fig) return null;
+      fig.scrollIntoView({ behavior: "instant" });
+      const buttons = Array.from(fig.querySelectorAll(".fig-head button, .fig-head a"))
+        .filter((b) => !b.hidden && getComputedStyle(b).display !== "none");
+      const hits = buttons.map((b) => {
+        const r = b.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const el = document.elementFromPoint(cx, cy);
+        const underControls = Boolean(el && el.closest(".controls"));
+        return { text: b.textContent.trim(), hitIsButton: el === b, underControls, elTag: el ? el.tagName : null };
+      });
+      return {
+        allButtons: hits.length > 0 && hits.every((h) => h.hitIsButton && !h.underControls),
+        hits
+      };
+    })()`);
+
+  const measureResetVsTitle = async () =>
+    ev(`(() => {
+      const fig = ${F};
+      const reset = fig && fig.querySelector(".plot-reset");
+      const title = fig && fig.querySelector(".plot-title");
+      if (!reset || !title || reset.hidden) return { error: "not visible" };
+      const rReset = reset.getBoundingClientRect();
+      const rTitle = title.getBoundingClientRect();
+      const intersects = !(
+        rReset.right <= rTitle.left ||
+        rReset.left >= rTitle.right ||
+        rReset.bottom <= rTitle.top ||
+        rReset.top >= rTitle.bottom
+      );
+      return {
+        resetVisible: !reset.hidden,
+        intersects,
+        resetRect: { left: rReset.left, right: rReset.right, top: rReset.top, bottom: rReset.bottom },
+        titleRect: { left: rTitle.left, right: rTitle.right, top: rTitle.top, bottom: rTitle.bottom }
+      };
+    })()`);
+
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await send("Page.navigate", { url: `http://127.0.0.1:${httpPort}/index.html?debug=1&layout=phone` });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await waitFor(`!!${F}`, FIGURE_MS);
+
+  const phoneControls = await ev(`(() => {
+    const de = document.documentElement;
+    const scrollOk = de.scrollWidth <= de.clientWidth && window.innerWidth === 390;
+    const c = document.querySelector(".controls");
+    if (!c) return { missing: true };
+    const buttons = Array.from(c.querySelectorAll("button")).map((b) => {
+      const r = b.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const el = document.elementFromPoint(cx, cy);
+      return {
+        text: b.textContent.trim(),
+        inside: r.left >= 0 && r.right <= window.innerWidth && r.top >= 0 && r.bottom <= window.innerHeight,
+        hit: el === b,
+        h44: r.height >= 44,
+        rect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height }
+      };
+    });
+    return {
+      scrollOk,
+      allInside: buttons.every((b) => b.inside),
+      allHit: buttons.every((b) => b.hit),
+      allH44: buttons.every((b) => b.h44),
+      buttons
+    };
+  })()`);
+  check(
+    "at 390x844 the page does not scroll sideways and every reading control is reachable",
+    Boolean(phoneControls && phoneControls.scrollOk && phoneControls.allInside && phoneControls.allHit),
+    JSON.stringify(phoneControls),
+  );
+  check(
+    "at 390x844 touch targets in .controls stay at least 44 px high",
+    Boolean(phoneControls && phoneControls.allH44),
+    JSON.stringify(phoneControls ? phoneControls.buttons.map((b) => ({ text: b.text, h: b.rect.height, ok: b.h44 })) : "missing"),
+  );
+
+  const phoneCitationWs = await ev(`getComputedStyle(document.querySelector(".citation")).whiteSpace`);
+  check(
+    "at 390x844 citations wrap (whiteSpace is normal)",
+    phoneCitationWs === "normal",
+    `whiteSpace=${phoneCitationWs}`,
+  );
+
+  // Figure scrollIntoView at 390x844
+  const figScroll390 = await measureHeaderButtons();
+  check(
+    "after scrollIntoView at 390x844 every figure action button is clickable and not under .controls",
+    Boolean(figScroll390 && figScroll390.allButtons),
+    JSON.stringify(figScroll390),
+  );
+
+  // Live figure at 390x844: mount, check "image" action button, and zoom for reset view
+  await ev(`(${F}.querySelector(".act-interact").click(), true)`);
+  await waitFor(`!!${F}._live`, FIRST_PAINT_MS, 100);
+
+  const figScroll390Live = await measureHeaderButtons();
+  check(
+    "after scrollIntoView at 390x844 live figure action buttons (including image) are not under .controls",
+    Boolean(figScroll390Live && figScroll390Live.allButtons),
+    JSON.stringify(figScroll390Live),
+  );
+
+  await ev(`(${F}._live.setView({ omegaMin: 0, omegaMax: 0.3, kMin: 0, kMax: 0.15 }), true)`);
+  await waitFor(`!${F}.querySelector(".plot-reset").hidden`, 5000);
+
+  const plotReset390 = await measureResetVsTitle();
+  check(
+    "with the view zoomed at 390x844 reset view and the plot title do not intersect",
+    Boolean(plotReset390 && plotReset390.resetVisible && !plotReset390.intersects),
+    JSON.stringify(plotReset390),
+  );
+
+  // ---- desktop layout (1440x900) ----
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Page.navigate", { url: `http://127.0.0.1:${httpPort}/index.html?debug=1&layout=desktop` });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await waitFor(`!!${F}`, FIGURE_MS);
+
+  const desktopCitationWs = await ev(`getComputedStyle(document.querySelector(".citation")).whiteSpace`);
+  check(
+    "at 1440x900 citations do not wrap (whiteSpace is nowrap)",
+    desktopCitationWs === "nowrap",
+    `whiteSpace=${desktopCitationWs}`,
+  );
+
+  const figScroll1440 = await measureHeaderButtons();
+  check(
+    "after scrollIntoView at 1440x900 every figure action button is clickable and not under .controls",
+    Boolean(figScroll1440 && figScroll1440.allButtons),
+    JSON.stringify(figScroll1440),
+  );
+
+  await ev(`(${F}.querySelector(".act-interact").click(), true)`);
+  await waitFor(`!!${F}._live`, FIRST_PAINT_MS, 100);
+
+  const figScroll1440Live = await measureHeaderButtons();
+  check(
+    "after scrollIntoView at 1440x900 live figure action buttons (including image) are not under .controls",
+    Boolean(figScroll1440Live && figScroll1440Live.allButtons),
+    JSON.stringify(figScroll1440Live),
+  );
+
+  await ev(`(${F}._live.setView({ omegaMin: 0, omegaMax: 0.3, kMin: 0, kMax: 0.15 }), true)`);
+  await waitFor(`!${F}.querySelector(".plot-reset").hidden`, 5000);
+
+  const plotReset1440 = await measureResetVsTitle();
+  check(
+    "with the view zoomed at 1440x900 reset view and the plot title do not intersect",
+    Boolean(plotReset1440 && plotReset1440.resetVisible && !plotReset1440.intersects),
+    JSON.stringify(plotReset1440),
+  );
+
+  await send("Emulation.clearDeviceMetricsOverride");
+
 
   await send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-data", value: "reduce" }],
