@@ -1662,6 +1662,37 @@ test("createLongTaskObserver counts entries over 50 ms when supported", () => {
   assert.equal(obs.count(), 3);
 });
 
+test("createLongTaskObserver counts only entries after interactT0 and uses buffered type", () => {
+  let registeredCallback = null;
+  let observeOpts = null;
+  class FakeObs {
+    static supportedEntryTypes = ["longtask"];
+    constructor(cb) {
+      registeredCallback = cb;
+    }
+    observe(opts) {
+      observeOpts = opts;
+    }
+    disconnect() {}
+  }
+  const interactT0 = 1000;
+  const obs = createLongTaskObserver(FakeObs, interactT0);
+  assert.equal(obs.supported, true);
+  assert.deepEqual(observeOpts, { type: "longtask", buffered: true });
+  registeredCallback({
+    getEntries: () => [
+      { startTime: 500, duration: 80 },
+      { startTime: 1200, duration: 80 },
+    ],
+  });
+  assert.equal(obs.count(), 1);
+
+  const unsupported = { supportedEntryTypes: ["paint"] };
+  const unsuppObs = createLongTaskObserver(unsupported, interactT0);
+  assert.equal(unsuppObs.supported, false);
+  assert.equal(unsuppObs.count(), "n/a");
+});
+
 test("formatDebugReportLine produces one line with six fields in order", () => {
   const line = formatDebugReportLine({
     figId: "fig:arnold_tongues",
@@ -1881,5 +1912,79 @@ test("createPaintHandler fires onFirstPaintComplete on the last tile of generati
   onPaint({ id: "1:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 58 });
   assert.ok(completedInfo);
   assert.deepEqual(completedInfo.tileTimes, [42, 58]);
+  assert.equal(completedInfo.generation, 1);
+});
+
+test("createPaintHandler does not fire onFirstPaintComplete when tiles queued but none in flight", () => {
+  const store = createStore();
+  let queueDepth = 2;
+  let inFlight = [];
+  const pool = {
+    getState: () => ({
+      generation: 1,
+      viewport: VIEWPORT,
+      queueDepth,
+      inFlight,
+    }),
+  };
+  const raster = { tileWorld };
+  let completedInfo = null;
+  const onPaint = createPaintHandler({
+    store,
+    raster,
+    getPool: () => pool,
+    getPlot: () => ({ redraw: () => {} }),
+    onFirstPaintComplete: (info) => {
+      completedInfo = info;
+    },
+  });
+
+  // Tile arrives, queueDepth is 2 but inFlight is empty: onFirstPaintComplete is NOT called
+  onPaint({ id: "0:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 30 });
+  assert.equal(completedInfo, null);
+
+  // Once both are empty: it IS called
+  queueDepth = 0;
+  inFlight = [];
+  onPaint({ id: "1:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 40 });
+  assert.ok(completedInfo);
+  assert.deepEqual(completedInfo.tileTimes, [30, 40]);
+  assert.equal(completedInfo.generation, 1);
+});
+
+test("createPaintHandler does not fire onFirstPaintComplete when tiles in flight but none queued", () => {
+  const store = createStore();
+  let queueDepth = 0;
+  let inFlight = [{ id: "1:0:0", generation: 1 }];
+  const pool = {
+    getState: () => ({
+      generation: 1,
+      viewport: VIEWPORT,
+      queueDepth,
+      inFlight,
+    }),
+  };
+  const raster = { tileWorld };
+  let completedInfo = null;
+  const onPaint = createPaintHandler({
+    store,
+    raster,
+    getPool: () => pool,
+    getPlot: () => ({ redraw: () => {} }),
+    onFirstPaintComplete: (info) => {
+      completedInfo = info;
+    },
+  });
+
+  // Tile arrives, queueDepth is 0 but inFlight has tiles: onFirstPaintComplete is NOT called
+  onPaint({ id: "0:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 25 });
+  assert.equal(completedInfo, null);
+
+  // Once both are empty: it IS called
+  queueDepth = 0;
+  inFlight = [];
+  onPaint({ id: "1:0:0", generation: 1, header: [2, 2, 200, 2000], data: [], computeMs: 35 });
+  assert.ok(completedInfo);
+  assert.deepEqual(completedInfo.tileTimes, [25, 35]);
   assert.equal(completedInfo.generation, 1);
 });

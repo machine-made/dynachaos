@@ -1799,9 +1799,13 @@ export function isLongTaskSupported(PerformanceObserverImpl = globalThis.Perform
  * count() returns "n/a" (Safari). Never 0 where unsupported.
  *
  * @param {typeof PerformanceObserver} [PerformanceObserverImpl]
+ * @param {number|object} [interactT0]
  * @returns {{ supported: boolean, count: () => number | "n/a", disconnect: () => void }}
  */
-export function createLongTaskObserver(PerformanceObserverImpl = globalThis.PerformanceObserver) {
+export function createLongTaskObserver(
+  PerformanceObserverImpl = globalThis.PerformanceObserver,
+  interactT0 = 0,
+) {
   if (!isLongTaskSupported(PerformanceObserverImpl)) {
     return {
       supported: false,
@@ -1809,12 +1813,25 @@ export function createLongTaskObserver(PerformanceObserverImpl = globalThis.Perf
       disconnect: () => {},
     };
   }
+  const t0 =
+    typeof interactT0 === "object" && interactT0 !== null
+      ? (interactT0.interactT0 ?? 0)
+      : typeof interactT0 === "number"
+      ? interactT0
+      : 0;
   let count = 0;
   let observer = null;
   function drain(records) {
     if (records) {
       for (const entry of records) {
-        if (entry && Number.isFinite(entry.duration) && entry.duration > 50) {
+        const start =
+          entry && Number.isFinite(entry.startTime) ? entry.startTime : 0;
+        if (
+          entry &&
+          Number.isFinite(entry.duration) &&
+          entry.duration > 50 &&
+          start >= t0
+        ) {
           count++;
         }
       }
@@ -1824,7 +1841,7 @@ export function createLongTaskObserver(PerformanceObserverImpl = globalThis.Perf
     observer = new PerformanceObserverImpl((list) => {
       drain(list.getEntries());
     });
-    observer.observe({ entryTypes: ["longtask"] });
+    observer.observe({ type: "longtask", buffered: true });
   } catch {
     return {
       supported: false,
@@ -1974,7 +1991,7 @@ export function createDebugTracker({
     };
   }
 
-  const observer = createLongTaskObserver(PerformanceObserverImpl);
+  const observer = createLongTaskObserver(PerformanceObserverImpl, interactT0);
   let done = false;
 
   function onFirstPaintComplete({ workerCount = 0, tileTimes = [] } = {}) {

@@ -92,6 +92,15 @@ reconstructed from git history. 0.4.0 is the first public release.
   logistic kernel), with every input clamped. They are exported; no page
   calls them yet. The paper pipeline still uses the Python path.
 
+- In debug mode (`?debug=1`, `#live-debug` in the page address, or
+  `localStorage.dynachaosDebug`), each live figure shows one line of numbers
+  under it with a copy button: the figure id, the browser name and version,
+  the worker count, the milliseconds from the interact press to the first full
+  paint, the median tile time, and the number of main-thread tasks over 50 ms.
+  A phone has no console, so a report from one can now carry these numbers.
+  The task count reads `n/a` where the browser has no long-task timing
+  (Safari). With debug mode off the page adds no box and no observer.
+
 ### Changed
 
 - `zero_one_statistic` and `zero_one_series` run on the Rust core when the
