@@ -1876,6 +1876,75 @@ test("createDebugTracker: debugEnabled false creates no observer and no DOM box"
   assert.equal(obsCreated, false);
 });
 
+test("createDebugTracker passes interactT0 to long-task observer", () => {
+  class MockNode {
+    constructor(tag) {
+      this.tagName = tag;
+      this.className = "";
+      this.textContent = "";
+      this.type = "";
+      this.children = [];
+      this.listeners = {};
+    }
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    }
+    remove() {
+      this.removed = true;
+    }
+    addEventListener(type, fn) {
+      this.listeners[type] = fn;
+    }
+    querySelector(sel) {
+      if (sel === ".fig-body") return this;
+      return this.children.find((c) => c.className === sel.replace(".", "")) || null;
+    }
+  }
+  const mockDoc = {
+    createElement: (tag) => new MockNode(tag),
+    defaultView: {
+      navigator: {
+        userAgent:
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/142.0.7444.175 Safari/537.36",
+      },
+    },
+  };
+  class FakeLongTaskObs {
+    static supportedEntryTypes = ["longtask"];
+    constructor(cb) {
+      this.cb = cb;
+    }
+    observe() {
+      if (typeof this.cb === "function") {
+        this.cb({
+          getEntries: () => [
+            { startTime: 500, duration: 80 },
+            { startTime: 1500, duration: 80 },
+          ],
+        });
+      }
+    }
+    disconnect() {}
+  }
+  const fig = new MockNode("figure");
+  fig.id = "fig:test";
+  const interactT0 = 1000;
+  const tracker = createDebugTracker({
+    fig,
+    interactT0,
+    debugEnabled: true,
+    PerformanceObserverImpl: FakeLongTaskObs,
+    doc: mockDoc,
+  });
+  tracker.onFirstPaintComplete({ workerCount: 4, tileTimes: [20, 30] });
+
+  assert.ok(fig._debugReport);
+  const fields = fig._debugReport.split(" ");
+  assert.equal(fields.length, 6);
+  assert.equal(fields[5], "1");
+});
+
 test("createPaintHandler fires onFirstPaintComplete on the last tile of generation 1", () => {
   const store = createStore();
   let inFlight = [{ id: "0:0:0", generation: 1 }];

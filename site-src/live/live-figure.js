@@ -1799,7 +1799,7 @@ export function isLongTaskSupported(PerformanceObserverImpl = globalThis.Perform
  * count() returns "n/a" (Safari). Never 0 where unsupported.
  *
  * @param {typeof PerformanceObserver} [PerformanceObserverImpl]
- * @param {number|object} [interactT0]
+ * @param {number} [interactT0]
  * @returns {{ supported: boolean, count: () => number | "n/a", disconnect: () => void }}
  */
 export function createLongTaskObserver(
@@ -1813,12 +1813,7 @@ export function createLongTaskObserver(
       disconnect: () => {},
     };
   }
-  const t0 =
-    typeof interactT0 === "object" && interactT0 !== null
-      ? (interactT0.interactT0 ?? 0)
-      : typeof interactT0 === "number"
-      ? interactT0
-      : 0;
+  const t0 = Number.isFinite(interactT0) ? interactT0 : 0;
   let count = 0;
   let observer = null;
   function drain(records) {
