@@ -328,6 +328,7 @@ body {
     html_parts.append("<h1>dynachaos — reproduction gallery</h1>")
     html_parts.append(
         "<p>Numerical reproductions of dynamical systems and chaos phenomena. "
+        '<a href="index.html">back to the paper</a> &middot; '
         '<a href="https://github.com/openfluids/dynachaos">View on GitHub</a></p>'
     )
     html_parts.append("</div>")
@@ -383,14 +384,14 @@ body {
                 f'<img class="card-image" '
                 f'src="thumbs/{section_id}/{webp_name}" '
                 f'loading="lazy" width="{thumb_width}" '
-                f'height="{thumb_height}" alt="{html.escape(png_name)}">'
+                f'height="{thumb_height}" alt="{html.escape(caption)}">'
             )
             html_parts.append(img_tag)
         else:
             img_tag = (
                 f'<img class="card-image" '
                 f'src="thumbs/{section_id}/{webp_name}" '
-                f'loading="lazy" alt="{html.escape(png_name)}">'
+                f'loading="lazy" alt="{html.escape(caption)}">'
             )
             html_parts.append(img_tag)
         html_parts.append('<div class="card-meta">')
@@ -424,6 +425,8 @@ document.querySelectorAll('.card').forEach(card => {
   card.addEventListener('click', () => {
     const fullPath = card.getAttribute('data-full');
     lightboxImage.src = fullPath;
+    const img = card.querySelector('.card-image');
+    lightboxImage.alt = img ? img.alt : '';
     lightbox.classList.add('active');
   });
 });

@@ -103,6 +103,8 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 ### Changed
 
+- The paper page links to the figure gallery from its top, the gallery links back, and gallery images use the caption as alt text.
+
 - On a 390 px phone the reading controls wrap inside the screen, a figure opened from a link or a
   jump lands below the fixed bar, 'reset view' stays clear of the plot title, and the page no longer
   scrolls sideways; citations wrap at phone widths and stay on one line on wider screens.

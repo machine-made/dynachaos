@@ -1227,6 +1227,7 @@ def hero(meta: dict[str, str], body: str) -> str:
 <h1>{html.escape(meta["title"])}</h1>
 <p class="byline">{html.escape(meta["authors"])}<span class="affil">{html.escape(meta["affil"])}</span></p>
 <p class="lede">{html.escape(meta["lede"])}</p>
+<p class="hero-links"><a href="gallery.html">all figures as a gallery</a></p>
 <ul class="stats">{stats}</ul>
 </div>
 <div class="legend">

@@ -2254,6 +2254,175 @@ try {
 
   await send("Emulation.clearDeviceMetricsOverride");
 
+  // ---- gallery links: paper hero link to gallery.html ----
+  const heroLinkReport = await (async () => {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    const desktop = await ev(`(() => {
+      const a = document.querySelector("header.hero a[href='gallery.html']");
+      if (!a) return { found: false };
+      const r = a.getBoundingClientRect();
+      const inVp = r.top >= 0 && r.bottom <= window.innerHeight;
+      return {
+        found: true,
+        href: a.getAttribute("href"),
+        text: (a.textContent || "").trim(),
+        top: r.top,
+        bottom: r.bottom,
+        innerHeight: window.innerHeight,
+        inVp,
+      };
+    })()`);
+
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    const phone = await ev(`(() => {
+      const a = document.querySelector("header.hero a[href='gallery.html']");
+      if (!a) return { found: false };
+      const r = a.getBoundingClientRect();
+      const inVp = r.top >= 0 && r.bottom <= window.innerHeight;
+      return {
+        found: true,
+        href: a.getAttribute("href"),
+        text: (a.textContent || "").trim(),
+        top: r.top,
+        bottom: r.bottom,
+        innerHeight: window.innerHeight,
+        inVp,
+      };
+    })()`);
+
+    await ev(`document.documentElement.setAttribute('data-theme', 'light')`);
+    const lightColor = await ev(`(() => {
+      const a = document.querySelector("header.hero a[href='gallery.html']");
+      return a ? window.getComputedStyle(a).color : "";
+    })()`);
+
+    await ev(`document.documentElement.setAttribute('data-theme', 'dark')`);
+    const darkColor = await ev(`(() => {
+      const a = document.querySelector("header.hero a[href='gallery.html']");
+      return a ? window.getComputedStyle(a).color : "";
+    })()`);
+
+    await ev(`document.documentElement.removeAttribute('data-theme')`);
+    await send("Emulation.clearDeviceMetricsOverride");
+
+    const heroLinksCount = await ev(`document.querySelectorAll("header.hero a[href='gallery.html']").length`);
+    const ok = Boolean(
+      heroLinksCount === 1 &&
+      desktop && desktop.found && desktop.inVp && desktop.href === "gallery.html" && desktop.text === "all figures as a gallery" &&
+      phone && phone.found && phone.inVp && phone.href === "gallery.html" && phone.text === "all figures as a gallery" &&
+      lightColor && darkColor && lightColor !== darkColor
+    );
+    return { ok, desktop, phone, heroLinksCount, lightColor, darkColor };
+  })();
+
+  check(
+    "header.hero holds one link to gallery.html inside first viewport at load and readable in light and dark theme",
+    heroLinkReport.ok,
+    JSON.stringify(heroLinkReport),
+  );
+
+  // ---- gallery links: gallery.html header holds link to index.html ----
+  const paperFooterLink = await ev(`(() => {
+    const a = document.querySelector("footer.foot a[href='gallery.html']");
+    return a ? { href: a.getAttribute("href"), text: (a.textContent || "").trim() } : null;
+  })()`);
+
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/gallery.html`,
+  });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+
+  const galleryHeaderReport = await ev(`(() => {
+    const a = document.querySelector(".header a[href='index.html']");
+    if (!a) return { found: false };
+    return {
+      found: true,
+      href: a.getAttribute("href"),
+      text: (a.textContent || "").trim(),
+    };
+  })()`);
+
+  check(
+    "gallery.html header holds a link to index.html and the paper footer link stays",
+    Boolean(
+      galleryHeaderReport &&
+      galleryHeaderReport.found &&
+      galleryHeaderReport.href === "index.html" &&
+      galleryHeaderReport.text === "back to the paper" &&
+      paperFooterLink &&
+      paperFooterLink.href === "gallery.html" &&
+      paperFooterLink.text === "Figure index"
+    ),
+    JSON.stringify({ galleryHeaderReport, paperFooterLink }),
+  );
+
+  // ---- gallery alt text: every .card-image has caption alt, lightbox keeps alt empty until set ----
+  const galleryAltReport = await ev(`(() => {
+    const cards = Array.from(document.querySelectorAll(".card"));
+    if (cards.length === 0) return { ok: false, reason: "no cards found" };
+    let matched = 0;
+    const mismatched = [];
+    for (const card of cards) {
+      const img = card.querySelector(".card-image");
+      const cap = card.querySelector(".card-caption");
+      const fn = card.querySelector(".card-filename");
+      if (!img || !cap || !fn) {
+        mismatched.push({ reason: "missing elements in card" });
+        continue;
+      }
+      const alt = img.getAttribute("alt");
+      const captionText = (cap.textContent || "").trim();
+      const filenameText = (fn.textContent || "").trim();
+      if (!alt || alt === filenameText || alt !== captionText) {
+        mismatched.push({ alt, captionText, filenameText });
+      } else {
+        matched++;
+      }
+    }
+    const lbImg = document.getElementById("lightbox-image");
+    const lbInitialAlt = lbImg ? lbImg.getAttribute("alt") : null;
+
+    let lbSetAlt = null;
+    if (cards.length > 0 && lbImg) {
+      cards[0].click();
+      lbSetAlt = lbImg.getAttribute("alt");
+      const closeBtn = document.querySelector(".lightbox-close");
+      if (closeBtn) closeBtn.click();
+    }
+
+    const firstCardCap = (cards[0]?.querySelector(".card-caption")?.textContent || "").trim();
+    const ok = Boolean(
+      mismatched.length === 0 &&
+      matched === cards.length &&
+      lbInitialAlt === "" &&
+      lbSetAlt === firstCardCap
+    );
+    return {
+      ok,
+      total: cards.length,
+      matched,
+      mismatched: mismatched.slice(0, 3),
+      lbInitialAlt,
+      lbSetAlt,
+      firstCardCap,
+    };
+  })()`);
+
+  check(
+    "every .card-image has alt matching card-caption differing from filename and lightbox keeps alt empty until set",
+    galleryAltReport.ok,
+    JSON.stringify(galleryAltReport),
+  );
 
   await send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-data", value: "reduce" }],
