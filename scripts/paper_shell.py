@@ -139,12 +139,11 @@ body{
   margin:0;background:var(--ground);color:var(--ink);
   font-family:var(--serif);font-size:var(--base);line-height:1.6;
   text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
   transition:background-color .35s ease,color .35s ease;
 }
 @media (prefers-reduced-motion:reduce){body{transition:none;}}
 
-math{font-family:var(--math);}
+math{font-family:var(--math);max-width:100%;overflow-x:auto;overflow-y:hidden;}
 math[display="block"]{display:block;margin:0;overflow-x:auto;overflow-y:hidden;max-width:100%;}
 /* the raw-LaTeX annotation is stripped at build time; belt and braces */
 annotation,annotation-xml{display:none;}
@@ -170,6 +169,7 @@ article li > ul,article li > ol{margin-top:0.4em;}
 .center,.minipage,.tabularx{margin:1.2rem 0;}
 .tabularx{overflow-x:auto;font-size:0.85em;}
 a{color:var(--chaotic);text-decoration:none;border-bottom:1px solid color-mix(in oklab,var(--chaotic) 35%,transparent);}
+a.uri{overflow-wrap:anywhere;}
 a:hover{border-bottom-color:currentColor;}
 :focus-visible{outline:2px solid var(--chaotic);outline-offset:2px;border-radius:2px;}
 code,.num{font-family:var(--mono);font-size:0.85em;font-variant-numeric:tabular-nums;}
@@ -534,6 +534,11 @@ table th[style],table td[style]{text-align:left !important;}
   .search-panel{max-width:none;height:100svh;max-height:none;border-radius:0;border:0;}
   .search-input{font-size:16px;padding:1.1rem 1rem;}
   .citation{white-space:normal;}
+  .hint-short{display:block;}
+  .hint-toggle{display:inline-flex;align-items:center;justify-content:center;
+    min-width:44px;min-height:44px;margin-top:0.35rem;margin-left:0;padding:0.5rem 0.6rem;box-sizing:border-box;}
+  .live-link-reset{display:inline-flex;align-items:center;justify-content:center;
+    min-width:44px;min-height:44px;padding:0.5rem 0.6rem;box-sizing:border-box;}
 }
 
 /* ------------------------------ help dialog ------------------------------ */

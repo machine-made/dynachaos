@@ -126,7 +126,9 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 - On a 390 px phone the reading controls wrap inside the screen, a figure opened from a link or a
   jump lands below the fixed bar, 'reset view' stays clear of the plot title, and the page no longer
-  scrolls sideways; citations wrap at phone widths and stay on one line on wider screens.
+  scrolls sideways; citations wrap at phone widths and stay on one line on wider screens. On 360 px
+  phones, long links wrap, wide equations scroll inside their own box, and the help and
+  return-to-default buttons have 44 px tap targets.
 
 - Figures opened from a shared link show a note reporting the applied values with a button to return
   to defaults, figures that compute in the browser carry a live tag beside the interact button, and the

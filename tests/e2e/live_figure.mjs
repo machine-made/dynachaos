@@ -2667,7 +2667,10 @@ try {
 
   const phoneControls = await ev(`(() => {
     const de = document.documentElement;
-    const scrollOk = de.scrollWidth <= de.clientWidth && window.innerWidth === 390;
+    const scrollOk = de.scrollWidth <= de.clientWidth &&
+      window.innerWidth === 390 &&
+      getComputedStyle(document.body).overflowX !== "hidden" &&
+      getComputedStyle(de).overflowX !== "hidden";
     const c = document.querySelector(".controls");
     if (!c) return { missing: true };
     const buttons = Array.from(c.querySelectorAll("button")).map((b) => {
@@ -2708,6 +2711,21 @@ try {
     phoneCitationWs === "normal",
     `whiteSpace=${phoneCitationWs}`,
   );
+  const phone390Links = await ev(`(() => {
+    const de = document.documentElement;
+    const uris = Array.from(document.querySelectorAll("a.uri"));
+    if (!uris.length) return { missing: true };
+    return {
+      allInside: uris.every((a) => a.getBoundingClientRect().right <= de.clientWidth + 0.5),
+      allWrap: uris.every((a) => a.getClientRects().length > 1),
+    };
+  })()`);
+  check(
+    "at 390x844 every a.uri lies inside the viewport and wraps across multiple lines",
+    Boolean(phone390Links && phone390Links.allInside && phone390Links.allWrap),
+    JSON.stringify(phone390Links),
+  );
+
 
   // Figure scrollIntoView at 390x844
   const figScroll390 = await measureHeaderButtons();
@@ -2737,6 +2755,108 @@ try {
     Boolean(plotReset390 && plotReset390.resetVisible && !plotReset390.intersects),
     JSON.stringify(plotReset390),
   );
+  // ---- phone layout (360x740) ----
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 360,
+    height: 740,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await send("Page.navigate", { url: `http://127.0.0.1:${httpPort}/index.html?debug=1&layout=phone360` });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await sleep(1000);
+
+  const phone360Scroll = await ev(`(() => {
+    const de = document.documentElement;
+    const body = document.body;
+    return {
+      scrollWidth: de.scrollWidth,
+      clientWidth: de.clientWidth,
+      innerWidth: window.innerWidth,
+      htmlOverflowX: getComputedStyle(de).overflowX,
+      bodyOverflowX: getComputedStyle(body).overflowX,
+      ok: window.innerWidth === 360 &&
+          de.scrollWidth <= de.clientWidth &&
+          getComputedStyle(de).overflowX !== "hidden" &&
+          getComputedStyle(body).overflowX !== "hidden",
+    };
+  })()`);
+  check(
+    "at 360x740 the page does not scroll sideways and html/body overflow-x is not hidden",
+    Boolean(phone360Scroll && phone360Scroll.ok),
+    JSON.stringify(phone360Scroll),
+  );
+
+  const phone360Links = await ev(`(() => {
+    const de = document.documentElement;
+    const uris = Array.from(document.querySelectorAll("a.uri"));
+    if (!uris.length) return { missing: true };
+    const items = uris.map((a) => {
+      const r = a.getBoundingClientRect();
+      const rects = a.getClientRects();
+      return {
+        href: a.href,
+        inside: r.right <= de.clientWidth + 0.5,
+        wraps: rects.length > 1,
+        rects: rects.length,
+        right: r.right,
+      };
+    });
+    return {
+      allInside: items.every((i) => i.inside),
+      allWrap: items.every((i) => i.wraps),
+      items,
+    };
+  })()`);
+  check(
+    "at 360x740 every a.uri lies inside the viewport and wraps across multiple lines",
+    Boolean(phone360Links && phone360Links.allInside && phone360Links.allWrap),
+    JSON.stringify(phone360Links),
+  );
+
+  const phone360Math = await ev(`(() => {
+    const de = document.documentElement;
+    const maths = Array.from(document.querySelectorAll("math"));
+    if (!maths.length) return { missing: true };
+    const items = maths.map((m) => {
+      const r = m.getBoundingClientRect();
+      const inside = r.right <= de.clientWidth + 0.5;
+      let scrollBoxOk = false;
+      let curr = m;
+      while (curr && curr !== document.body && curr !== de) {
+        const ox = getComputedStyle(curr).overflowX;
+        if (ox === "auto" || ox === "scroll") {
+          const pr = curr.getBoundingClientRect();
+          if (pr.right <= de.clientWidth + 0.5 && curr.scrollWidth >= Math.round(r.width) - 1) {
+            scrollBoxOk = true;
+            break;
+          }
+        }
+        curr = curr.parentElement;
+      }
+      return {
+        inside,
+        scrollBoxOk,
+        ok: inside || scrollBoxOk,
+        right: Math.round(r.right),
+        w: Math.round(r.width),
+        sw: m.scrollWidth,
+        text: m.textContent.slice(0, 30),
+      };
+    });
+    const failing = items.filter((i) => !i.ok);
+    return {
+      allOk: failing.length === 0,
+      failing,
+      count: items.length,
+    };
+  })()`);
+  check(
+    "at 360x740 every display-math element ends inside the viewport or sits in an auto-scrolling box",
+    Boolean(phone360Math && phone360Math.allOk),
+    JSON.stringify(phone360Math),
+  );
+
 
   // ---- desktop layout (1440x900) ----
   await send("Emulation.setDeviceMetricsOverride", {
@@ -2913,6 +3033,31 @@ try {
     ),
     JSON.stringify({ t03: shared1440_03, t10: shared1440_10, t30: shared1440_30, visibleDLabel }),
   );
+  const tapTargets1440 = await ev(`(() => {
+    const fig = ${S};
+    if (!fig) return null;
+    const hintToggle = fig.querySelector(".hint-toggle");
+    const resetBtn = fig.querySelector(".live-link-reset");
+    const rToggle = hintToggle ? hintToggle.getBoundingClientRect() : null;
+    const rReset = resetBtn ? resetBtn.getBoundingClientRect() : null;
+    return {
+      toggleH: rToggle ? rToggle.height : null,
+      toggleW: rToggle ? rToggle.width : null,
+      resetH: rReset ? rReset.height : null,
+      resetW: rReset ? rReset.width : null,
+    };
+  })()`);
+  check(
+    "at 1440x900 desktop tap targets for .hint-toggle and .live-link-reset are unchanged from HEAD",
+    Boolean(
+      tapTargets1440 &&
+        tapTargets1440.toggleH < 25 &&
+        tapTargets1440.toggleW < 40 &&
+        tapTargets1440.resetH < 25,
+    ),
+    JSON.stringify(tapTargets1440),
+  );
+
 
   // Reset at 1440x900 returns to default
   await ev(`(${S}.querySelector(".live-link-note button").click(), true)`);
@@ -3003,6 +3148,71 @@ try {
     ),
     JSON.stringify({ t03: shared390_03, t10: shared390_10, t30: shared390_30, visibleDLabel }),
   );
+  // Mount the live figure to test tap targets after mount with shared link applied
+  await ev(`(${S}.querySelector(".act-interact").click(), true)`);
+  await waitFor(`!!(${S} && ${S}._live)`, FIRST_PAINT_MS);
+  await waitFor(`!!(${S} && ${S}.querySelector(".hint-toggle"))`, FIGURE_MS);
+
+  const tapTargets390 = await ev(`(() => {
+    const fig = ${S};
+    if (!fig) return null;
+    const de = document.documentElement;
+    const intersects = (r1, r2) => !(r1.right <= r2.left || r1.left >= r2.right || r1.bottom <= r2.top || r1.top >= r2.bottom);
+
+    const hintToggle = fig.querySelector(".hint-toggle");
+    const resetBtn = fig.querySelector(".live-link-reset");
+    const hintShort = fig.querySelector(".hint-short");
+    const note = fig.querySelector(".live-link-note");
+
+    const rToggle = hintToggle ? hintToggle.getBoundingClientRect() : null;
+    const rReset = resetBtn ? resetBtn.getBoundingClientRect() : null;
+    const rShort = hintShort ? hintShort.getBoundingClientRect() : null;
+
+    const insideVp = (r) => Boolean(r && r.left >= 0 && r.right <= de.clientWidth + 0.5 && r.top >= 0);
+
+    const toggleH44 = Boolean(rToggle && rToggle.height >= 44 && rToggle.width >= 44);
+    const toggleInside = insideVp(rToggle);
+    const toggleNoOverlap = Boolean(rToggle && rShort && !intersects(rToggle, rShort));
+
+    let resetNoOverlap = true;
+    if (note && rReset) {
+      const textNode = note.childNodes[0];
+      if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+        const range = document.createRange();
+        range.selectNode(textNode);
+        const rText = range.getBoundingClientRect();
+        if (intersects(rReset, rText)) resetNoOverlap = false;
+      }
+    }
+    const resetH44 = Boolean(rReset && rReset.height >= 44 && rReset.width >= 44);
+    const resetInside = insideVp(rReset);
+
+    return {
+      toggleH44,
+      toggleInside,
+      toggleNoOverlap,
+      toggleOk: toggleH44 && toggleInside && toggleNoOverlap,
+      toggleRect: rToggle ? { w: rToggle.width, h: rToggle.height } : null,
+      resetH44,
+      resetInside,
+      resetNoOverlap,
+      resetOk: resetH44 && resetInside && resetNoOverlap,
+      resetRect: rReset ? { w: rReset.width, h: rReset.height } : null,
+    };
+  })()`);
+
+  check(
+    "at 390x844 after live figure mount with shared link, .hint-toggle has at least 44x44 px tap target without overlap",
+    Boolean(tapTargets390 && tapTargets390.toggleOk),
+    JSON.stringify(tapTargets390 ? tapTargets390.toggleRect : "missing"),
+  );
+
+  check(
+    "at 390x844 after live figure mount with shared link, .live-link-reset has at least 44x44 px tap target without overlap",
+    Boolean(tapTargets390 && tapTargets390.resetOk),
+    JSON.stringify(tapTargets390 ? tapTargets390.resetRect : "missing"),
+  );
+
 
   // Reset at 390x844 returns to default
   await ev(`(${S}.querySelector(".live-link-note button").click(), true)`);
