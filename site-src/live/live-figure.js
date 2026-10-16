@@ -2024,3 +2024,24 @@ export function createDebugTracker({
     destroy,
   };
 }
+
+export const LIVE_HINT_SHORT = "drag to zoom · scroll or pinch · tap to read · reset view";
+export const LIVE_HINT_SHORT_PLAY = "drag to zoom · play to step · tap to read · reset view";
+export const LIVE_HINT_FULL =
+  "tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
+export const LIVE_HINT_FULL_PLAY =
+  "tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · play appends new rows and drops the oldest · computed live in this browser";
+
+/**
+ * Build the short interaction hint and the full list for a live figure.
+ *
+ * @param {{ play?: boolean }} [options]
+ * @returns {{ shortText: string, fullText: string }}
+ */
+export function buildHint(options = {}) {
+  const isPlay = Boolean(options && options.play);
+  return {
+    shortText: isPlay ? LIVE_HINT_SHORT_PLAY : LIVE_HINT_SHORT,
+    fullText: isPlay ? LIVE_HINT_FULL_PLAY : LIVE_HINT_FULL,
+  };
+}

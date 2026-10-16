@@ -2006,6 +2006,213 @@ try {
 
   await send("Emulation.clearDeviceMetricsOverride");
 
+  // ---- discoverability: live tags, shared links, link notes, hints ----
+  // 1. Exactly six elements with class live-tag exist, one per figure[data-live]
+  const tagReport = await ev(`(() => {
+    const figs = Array.from(document.querySelectorAll("figure[data-live]"));
+    const tags = Array.from(document.querySelectorAll(".live-tag"));
+    const countOk = tags.length === 6 && figs.length === 6;
+    const eachHasOne = figs.every((f) => f.querySelectorAll(".live-tag").length === 1);
+    const besideInteract = tags.every((t) => {
+      const p = t.parentElement;
+      const btn = p ? p.querySelector(".act-interact") : null;
+      return Boolean(btn && (t.nextElementSibling === btn || t.previousElementSibling === btn));
+    });
+    const textsOk = tags.every((t) => t.textContent.trim() === "live");
+    const titlesOk = tags.every((t) => /computes.*in the browser/i.test(t.title));
+    return { countOk, eachHasOne, besideInteract, textsOk, titlesOk, count: tags.length };
+  })()`);
+  check(
+    "exactly six elements with class live-tag exist beside interact with browser title and live text",
+    Boolean(tagReport && tagReport.countOk && tagReport.eachHasOne && tagReport.besideInteract && tagReport.textsOk && tagReport.titlesOk),
+    JSON.stringify(tagReport),
+  );
+
+  // 2. Interaction hint is at most 80 characters, full list behind help toggle
+  const hintReport = await ev(`(() => {
+    const fig = ${F};
+    if (!fig) return null;
+    const hintShort = fig.querySelector(".hint-short");
+    const hintToggle = fig.querySelector(".hint-toggle");
+    const hintFull = fig.querySelector(".hint-full");
+    if (!hintShort || !hintToggle || !hintFull) return { missing: true };
+    const shortText = hintShort.textContent.trim();
+    const shortLen = shortText.length;
+    const initialHidden = hintFull.hidden;
+    const fullText = hintFull.textContent.trim();
+    hintToggle.click();
+    const toggledVisible = !hintFull.hidden;
+    hintToggle.click();
+    const closedAgain = hintFull.hidden;
+    return {
+      shortLen,
+      shortText,
+      initialHidden,
+      toggledVisible,
+      closedAgain,
+      hasTap: fullText.includes("tap to read values"),
+      hasLive: fullText.includes("computed live in this browser"),
+      fullLen: fullText.length,
+    };
+  })()`);
+  check(
+    "the visible hint under every live figure is at most 80 characters with the full list behind help toggle",
+    Boolean(
+      hintReport &&
+        hintReport.shortLen > 0 &&
+        hintReport.shortLen <= 80 &&
+        hintReport.initialHidden &&
+        hintReport.toggledVisible &&
+        hintReport.closedAgain &&
+        hintReport.hasTap &&
+        hintReport.hasLive,
+    ),
+    JSON.stringify(hintReport),
+  );
+
+  // 3. Shared link: 1440x900 viewport
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/index.html#fig:devils_staircase.D=0.4`,
+  });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await waitFor(`!!${S}`, FIGURE_MS);
+  await waitFor(`!!(${S} && ${S}.querySelector(".live-link-note"))`, FIGURE_MS);
+  await waitFor(`!!(${S} && ${S}._live)`, FIRST_PAINT_MS);
+
+  const shared1440 = await ev(`(() => {
+    const fig = ${S};
+    if (!fig) return null;
+    const ctrl = document.querySelector(".controls");
+    const cr = ctrl ? ctrl.getBoundingClientRect() : null;
+    const r = fig.getBoundingClientRect();
+    const note = fig.querySelector(".live-link-note");
+    const noteText = note ? note.textContent.trim() : "";
+    const inView = Boolean(cr && r.top >= cr.bottom && r.top < window.innerHeight);
+    return {
+      inView,
+      top: r.top,
+      controlsBottom: cr ? cr.bottom : null,
+      noteText,
+      hasButton: Boolean(note && note.querySelector("button")),
+    };
+  })()`);
+  check(
+    "at 1440x900 a shared link scrolls the figure into view and shows the opened note",
+    Boolean(
+      shared1440 &&
+        shared1440.inView &&
+        shared1440.hasButton &&
+        shared1440.noteText.includes("Opened with D = 0.4 from the link"),
+    ),
+    JSON.stringify(shared1440),
+  );
+
+  // Reset at 1440x900 returns to default
+  await ev(`(${S}.querySelector(".live-link-note button").click(), true)`);
+  const reset1440 = await ev(`(() => {
+    const fig = ${S};
+    const num = fig && fig.querySelector(".live-params input[type=number]");
+    const hash = location.hash;
+    const noteGone = Boolean(fig && !fig.querySelector(".live-link-note"));
+    return {
+      val: num ? Number(num.value) : null,
+      hash,
+      noteGone,
+    };
+  })()`);
+  check(
+    "at 1440x900 returning to default restores the control and hash and removes the note",
+    Boolean(reset1440 && reset1440.val === 0.25 && !reset1440.hash.includes("0.4") && reset1440.noteGone),
+    JSON.stringify(reset1440),
+  );
+
+  // 4. Shared link: 390x844 phone viewport
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/index.html#fig:devils_staircase.D=0.4`,
+  });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await waitFor(`!!${S}`, FIGURE_MS);
+  await waitFor(`!!(${S} && ${S}.querySelector(".live-link-note"))`, FIGURE_MS);
+
+  const shared390 = await ev(`(() => {
+    const fig = ${S};
+    if (!fig) return null;
+    const ctrl = document.querySelector(".controls");
+    const cr = ctrl ? ctrl.getBoundingClientRect() : null;
+    const r = fig.getBoundingClientRect();
+    const note = fig.querySelector(".live-link-note");
+    const noteText = note ? note.textContent.trim() : "";
+    const inView = Boolean(cr && r.top >= cr.bottom && r.top < window.innerHeight);
+    return {
+      inView,
+      top: r.top,
+      controlsBottom: cr ? cr.bottom : null,
+      noteText,
+      hasButton: Boolean(note && note.querySelector("button")),
+    };
+  })()`);
+  check(
+    "at 390x844 a shared link scrolls the figure into view and shows the opened note",
+    Boolean(
+      shared390 &&
+        shared390.inView &&
+        shared390.hasButton &&
+        shared390.noteText.includes("Opened with D = 0.4 from the link"),
+    ),
+    JSON.stringify(shared390),
+  );
+
+  // Reset at 390x844 returns to default
+  await ev(`(${S}.querySelector(".live-link-note button").click(), true)`);
+  const reset390 = await ev(`(() => {
+    const fig = ${S};
+    const hash = location.hash;
+    const noteGone = Boolean(fig && !fig.querySelector(".live-link-note"));
+    return {
+      hash,
+      noteGone,
+    };
+  })()`);
+  check(
+    "at 390x844 returning to default restores the hash and removes the note",
+    Boolean(reset390 && !reset390.hash.includes("0.4") && reset390.noteGone),
+    JSON.stringify(reset390),
+  );
+
+  // 5. A link without parameters shows no note and does not scroll on load
+  await ev("sessionStorage.clear()");
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Page.navigate", {
+    url: `http://127.0.0.1:${httpPort}/index.html`,
+  });
+  await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+  await sleep(300);
+  const noParamsReport = await ev(`(() => ({
+    scrollY: window.scrollY,
+    notes: document.querySelectorAll(".live-link-note").length,
+  }))()`);
+  check(
+    "a link without parameters shows no note and does not scroll the page on load",
+    Boolean(noParamsReport && noParamsReport.scrollY === 0 && noParamsReport.notes === 0),
+    JSON.stringify(noParamsReport),
+  );
+
+  await send("Emulation.clearDeviceMetricsOverride");
+
 
   await send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-data", value: "reduce" }],

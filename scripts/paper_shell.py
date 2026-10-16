@@ -134,7 +134,7 @@ CSS = (
 .skip-link:focus{top:0.6rem;}
 
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;scroll-padding-top:3.5rem;-webkit-text-size-adjust:100%;}
+html{scroll-behavior:smooth;scroll-padding-top:5rem;-webkit-text-size-adjust:100%;}
 body{
   margin:0;background:var(--ground);color:var(--ink);
   font-family:var(--serif);font-size:var(--base);line-height:1.6;
@@ -221,7 +221,7 @@ pre{background:var(--sunken);border:1px solid var(--rule);border-radius:4px;padd
    when the page is scrolled. Grow padding (not font-size) and reserve the
    safe-area inset so the bar always clears it. */
 @media (max-width:36rem){
-  html{scroll-padding-top:7rem;}
+  html{scroll-padding-top:9rem;}
   .controls{
     left:0;right:0;max-width:100%;flex-wrap:wrap;justify-content:flex-end;
     border-left:none;border-bottom-left-radius:0;
@@ -319,6 +319,9 @@ figure:hover{border-color:color-mix(in oklab,var(--chaotic) 30%,var(--rule));
 .fig-head button{appearance:none;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-mid);
   font-family:var(--mono);font-size:0.6rem;letter-spacing:0.08em;text-transform:uppercase;padding:0.24rem 0.45rem;cursor:pointer;transition:all .15s;}
 .fig-head button:hover{color:var(--chaotic);border-color:var(--chaotic);}
+.live-tag{appearance:none;background:none;border:1px solid var(--rule);border-radius:4px;color:var(--ink-low);
+  font-family:var(--mono);font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;padding:0.24rem 0.45rem;
+  line-height:1;display:inline-flex;align-items:center;}
 /* always-visible: a reader who followed a shared link must never be silently
    looking at a non-published view without a way to tell and undo it. */
 .fig-badge{appearance:none;background:none;border:1px solid var(--chaotic);border-radius:4px;
@@ -360,6 +363,18 @@ details.fig-code code.fig-snippet{font-family:var(--mono);font-size:0.72rem;line
 canvas.plot{width:100%;display:block;touch-action:pan-y;}
 canvas.plot.live{touch-action:none;}
 .hint{margin:0;padding:0 0.8rem 0.6rem;font-family:var(--mono);font-size:0.6rem;letter-spacing:0.06em;color:var(--ink-low);}
+.hint-toggle{appearance:none;background:none;border:1px solid var(--rule);border-radius:3px;color:var(--ink-low);
+  font-family:var(--mono);font-size:0.55rem;letter-spacing:0.04em;padding:0.05rem 0.35rem;cursor:pointer;margin-left:0.35rem;vertical-align:baseline;}
+.hint-toggle:hover{color:var(--ink);border-color:var(--ink-low);}
+.hint-full{display:block;margin-top:0.3rem;}
+.hint-full[hidden]{display:none;}
+.live-link-note{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;padding:0.4rem 0.8rem;
+  background:var(--sunken);border:1px solid var(--rule);border-radius:3px;margin:0.4rem 0.8rem 0.6rem;
+  font-family:var(--mono);font-size:0.65rem;color:var(--ink-mid);}
+.live-link-reset{appearance:none;background:var(--raised);border:1px solid var(--rule);border-radius:3px;
+  color:var(--ink-mid);font-family:var(--mono);font-size:0.6rem;letter-spacing:0.04em;
+  padding:0.15rem 0.45rem;cursor:pointer;}
+.live-link-reset:hover{color:var(--ink);border-color:var(--ink-low);}
 .live-params{display:flex;flex-wrap:wrap;gap:0.4rem 1.2rem;padding:0.2rem 0.8rem 0.4rem;
   font-family:var(--mono);font-size:0.66rem;color:var(--ink-low);}
 .live-param{display:flex;align-items:center;gap:0.45rem;}
@@ -1726,6 +1741,21 @@ function unmountPlot(fig){
 function liveModuleUrl(name){
   return new URL("live/"+name, document.baseURI).href;
 }
+function attachLiveHint(parent, liveFigure, opts){
+  const {shortText, fullText}=liveFigure.buildHint(opts);
+  const hint=document.createElement("p");hint.className="hint";
+  const s=document.createElement("span");s.className="hint-short";
+  s.textContent=shortText;
+  const btn=document.createElement("button");btn.type="button";btn.className="hint-toggle";
+  btn.textContent="help";
+  const full=document.createElement("span");full.className="hint-full";
+  full.hidden=true;full.textContent=fullText;
+  btn.addEventListener("click",()=>{full.hidden=!full.hidden;});
+  hint.appendChild(s);hint.appendChild(btn);hint.appendChild(full);
+  parent.appendChild(hint);
+  return hint;
+}
+
 
 async function mountLive(fig, opts){
   const body=fig.querySelector(".fig-body");
@@ -1812,9 +1842,7 @@ async function mountLive(fig, opts){
     const tileCells=raster.tileCellsFor((c.clientWidth||1)*dpr,(c.clientHeight||1)*dpr,{
       levels:liveLevels,nIter:params.nIter,nTransient:params.nTransient
     });
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
-    body.appendChild(hint);
+    const hint=attachLiveHint(body,liveFigure);
     pool=poolMod.createPool({
       workerUrl:new URL("live/tile-worker.js", document.baseURI),
       scheduler:liveFigure.createSchedulerOptions({levels:liveLevels,tileCells,params}),
@@ -1868,6 +1896,7 @@ function buildParamControls(specs){
   const inputs={};
   for(const spec of specs){
     const lab=document.createElement("label");lab.className="live-param";
+    lab.dataset.param=spec.name;
     const name=document.createElement("span");name.className="live-param-name";
     name.textContent=spec.name;
     if(spec.options){
@@ -1929,9 +1958,7 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
     w.appendChild(c);
     const {ctrls,inputs}=buildParamControls(cfg.paramSpecs);
     w.appendChild(ctrls);
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
-    w.appendChild(hint);
+    const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
     note.textContent="the image below is the published figure; its lower panel (Lyapunov exponent) is not live; only the \u03c1(A) curve above is computed in your browser";
@@ -2056,9 +2083,7 @@ async function mountAttractors(fig,body,{liveFigure,paramsMod,capText,debugTrack
     w.appendChild(c);
     const {ctrls,inputs}=buildParamControls(cfg.paramSpecs);
     w.appendChild(ctrls);
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
-    w.appendChild(hint);
+    const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
     note.textContent="the image below is the published figure; twelve panels at fixed D values; the cloud above is computed in your browser at the D you choose";
@@ -2159,9 +2184,7 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
     w.appendChild(c);
     const {ctrls,inputs}=buildParamControls(cfg.paramSpecs);
     w.appendChild(ctrls);
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
-    w.appendChild(hint);
+    const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
     note.textContent="the image below is the published figure; three panels at fixed D values; the cloud above is computed in your browser at the map and D you choose";
@@ -2281,9 +2304,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     w.appendChild(c);
     const {ctrls,inputs}=buildParamControls(cfg.paramSpecs);
     w.appendChild(ctrls);
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · computed live in this browser";
-    w.appendChild(hint);
+    const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
     note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose; the two preset buttons reproduce the zoom panels' windows";
@@ -2412,9 +2433,7 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debu
     playBtn.type="button";playBtn.className="live-play";playBtn.textContent="play";
     transport.appendChild(playBtn);
     w.appendChild(transport);
-    const hint=document.createElement("p");hint.className="hint";
-    hint.textContent="tap to read values · drag to zoom · scroll or pinch to zoom · one finger to pan · reset view button to restore · focus the plot and use +/- to zoom, 0 or Esc to reset · play appends new rows and drops the oldest · computed live in this browser";
-    w.appendChild(hint);
+    const hint=attachLiveHint(w,liveFigure,{play:true});
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
     note.textContent="the image below is the published figure; nine panels at fixed \u03b5 values; the field above is computed in your browser at the model, \u03b5 and site count you choose";
@@ -2520,6 +2539,48 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debu
     throw err;
   }
 }
+function showLiveLinkNote(fig,cfg,values,paramsMod){
+  const old=fig.querySelector(".live-link-note");
+  if(old) old.remove();
+  const body=fig.querySelector(".fig-body");
+  if(!body) return;
+  const parts=[];
+  for(const name of Object.keys(values)){
+    let label=name;
+    const labEl=fig.querySelector(`.live-param[data-param="${name}"] .live-param-name`);
+    if(labEl&&labEl.textContent.trim()) label=labEl.textContent.trim();
+    else{
+      const spec=cfg.paramSpecs&&cfg.paramSpecs.find(s=>s.name===name);
+      if(spec&&spec.name) label=spec.name;
+    }
+    parts.push(`${label} = ${values[name]}`);
+  }
+  if(!parts.length) return;
+  const note=document.createElement("p");
+  note.className="live-link-note hint";
+  note.textContent=`Opened with ${parts.join(", ")} from the link `;
+  const resetBtn=document.createElement("button");
+  resetBtn.type="button";
+  resetBtn.className="live-link-reset";
+  resetBtn.textContent="return to default";
+  resetBtn.addEventListener("click",()=>{
+    const defaults={};
+    if(cfg.paramSpecs){
+      for(const s of cfg.paramSpecs) defaults[s.name]=s.default;
+    }
+    if(fig._live&&fig._live.setParams){
+      fig._live.setParams(defaults);
+    }
+    fig._pendingLive=null;
+    let nextFrag=paramsMod.writeParamsIntoHash(location.hash,fig.id,{});
+    if(!nextFrag&&location.hash.startsWith("#"+fig.id)) nextFrag=fig.id;
+    history.replaceState(null,"",location.pathname+location.search+(nextFrag?"#"+nextFrag:""));
+    note.remove();
+  });
+  note.appendChild(resetBtn);
+  body.insertBefore(note,body.firstChild);
+}
+
 
 function applyPendingLive(fig){
   // A narrow viewport keeps the PNG, but the shared link's parameters must
@@ -2624,6 +2685,13 @@ async function mountInteractive(fig, opts){
 document.querySelectorAll("figure[data-src],figure[data-live]").forEach(fig=>{
   const btn=fig.querySelector(".act-interact");
   if(btn) btn.addEventListener("click",()=>mountInteractive(fig,{requested:true,interactT0:performance.now()}));
+  if(btn&&fig.dataset.live&&!fig.querySelector(".live-tag")){
+    const tag=document.createElement("span");
+    tag.className="live-tag";
+    tag.title="Computes in the browser";
+    tag.textContent="live";
+    btn.parentNode.insertBefore(tag,btn);
+  }
 });
 
 /* ---------------- figure code snippets ---------------- */
@@ -2773,7 +2841,7 @@ document.querySelectorAll("figure").forEach(fig=>{
   // above never sees them. Read the hash captured at parse time — the
   // scroll-spy may already have rewritten it — then mount through the same
   // interact path and push the parsed values in without the debounce.
-  (function(){
+  function applyLiveHash(){
     const frag=location.hash;
     if(frag.indexOf("=")<0) return;
     document.querySelectorAll("figure[data-live]").forEach(fig=>{
@@ -2784,14 +2852,18 @@ document.querySelectorAll("figure").forEach(fig=>{
           const values=paramsMod.parseHash(frag,cfg.paramSpecs,fig.id);
           if(!Object.keys(values).length) return;
           fig._pendingLive=values;
+          showLiveLinkNote(fig,cfg,values,paramsMod);
           const mounted=fig.dataset.state==="live"?Promise.resolve():mountInteractive(fig);
           mounted.then(()=>{
             if(fig._live&&fig._live.setParams) fig._live.setParams(values);
+            requestAnimationFrame(()=>fig.scrollIntoView({block:"start",behavior:"instant"}));
           });
         })
       ).catch(()=>{});
     });
-  })();
+  }
+  applyLiveHash();
+  addEventListener("hashchange",applyLiveHash);
 })();
 
 /* ---------------- lightbox + figure nav ---------------- */
@@ -3517,13 +3589,28 @@ document.querySelectorAll("figure").forEach(fig=>{
 
 /* ---------------- cross-references into folded back matter ---------------- */
 function revealTarget(){
-  const id=decodeURIComponent(location.hash.slice(1)).split("&")[0];
-  if(!id) return;
-  const el=document.getElementById(id);
+  const clean=decodeURIComponent((location.hash||"").replace(/^#/,""));
+  if(!clean) return;
+  let el=null;
+  for(const token of clean.split("&")){
+    const eq=token.indexOf("=");
+    if(eq>0){
+      const key=token.slice(0,eq);
+      const dot=key.lastIndexOf(".");
+      if(dot>0){
+        el=document.getElementById(key.slice(0,dot));
+        if(el) break;
+      }
+    }
+  }
+  if(!el){
+    const first=clean.split("&")[0];
+    if(first) el=document.getElementById(first);
+  }
   if(!el) return;
   let d=el.closest("details");
   while(d){d.open=true;d=d.parentElement&&d.parentElement.closest("details");}
-  requestAnimationFrame(()=>el.scrollIntoView({block:"start",behavior:"auto"}));
+  requestAnimationFrame(()=>el.scrollIntoView({block:"start",behavior:"instant"}));
 }
 addEventListener("hashchange",revealTarget);
 if(location.hash) addEventListener("load",revealTarget);

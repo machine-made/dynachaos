@@ -8,6 +8,11 @@ import {
   LIVE_STAIRCASE,
   LIVE_SPACETIME,
   LIVE_TORUS,
+  LIVE_HINT_FULL,
+  LIVE_HINT_FULL_PLAY,
+  LIVE_HINT_SHORT,
+  LIVE_HINT_SHORT_PLAY,
+  buildHint,
   attractorFixedPoint,
   attractorRequest,
   attractorTrace,
@@ -2056,4 +2061,22 @@ test("createPaintHandler does not fire onFirstPaintComplete when tiles in flight
   assert.ok(completedInfo);
   assert.deepEqual(completedInfo.tileTimes, [25, 35]);
   assert.equal(completedInfo.generation, 1);
+});
+
+test("buildHint returns a short hint under 80 characters and unchanged full text", () => {
+  const hint = buildHint();
+  assert.ok(hint.shortText.length <= 80, `short hint length ${hint.shortText.length} must be <= 80`);
+  assert.equal(hint.shortText, LIVE_HINT_SHORT);
+  assert.equal(hint.fullText, LIVE_HINT_FULL);
+  assert.ok(hint.fullText.includes("tap to read values"));
+  assert.ok(hint.fullText.includes("drag to zoom"));
+  assert.ok(hint.fullText.includes("computed live in this browser"));
+});
+
+test("buildHint with play returns a play-specific short hint under 80 characters and full text", () => {
+  const hint = buildHint({ play: true });
+  assert.ok(hint.shortText.length <= 80, `play short hint length ${hint.shortText.length} must be <= 80`);
+  assert.equal(hint.shortText, LIVE_HINT_SHORT_PLAY);
+  assert.equal(hint.fullText, LIVE_HINT_FULL_PLAY);
+  assert.ok(hint.fullText.includes("play appends new rows and drops the oldest"));
 });
