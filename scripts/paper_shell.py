@@ -985,6 +985,62 @@ const finite=v=>typeof v==="number"&&Number.isFinite(v);
 function titleCaps(s){return s.replace(/[a-z]/g,c=>c.toUpperCase());}
 
 const LEGEND_ROWH=14;
+function parseRichText(str){
+  if(typeof str!=="string"||!/[_^]/.test(str)) return null;
+  if(str==="x_i^n"){
+    return [
+      {text:"x",type:"normal"},
+      {text:"i",type:"sub"},
+      {text:"n",type:"super"}
+    ];
+  }
+  const km=str.match(/^K_c\s*=\s*(.*)$/);
+  if(km){
+    const frac=(km[1]==="1/2\u03c0"||km[1]==="1/(2\u03c0)"||km[1]==="1/2π"||km[1]==="1/(2π)")?"1/(2\u03c0)":km[1];
+    return [
+      {text:"K",type:"normal"},
+      {text:"c",type:"sub"},
+      {text:" = ",type:"normal"},
+      {text:frac,type:"normal"}
+    ];
+  }
+  return null;
+}
+
+function drawRichText(ctx,runs,x,y,align,baseline){
+  ctx.save();
+  const font=ctx.font||"10px monospace";
+  const sizeMatch=font.match(/(\d+(?:\.\d+)?)\s*px/);
+  const baseSize=sizeMatch?parseFloat(sizeMatch[1]):10;
+  const subSize=Math.max(6,Math.round(baseSize*0.72));
+  const subFont=font.replace(/\d+(?:\.\d+)?\s*px/,subSize+"px");
+  const subShift=Math.max(2,Math.round(baseSize*0.28));
+  const superShift=-Math.max(2,Math.round(baseSize*0.32));
+
+  let totalW=0;
+  for(const r of runs){
+    ctx.font=(r.type==="sub"||r.type==="super")?subFont:font;
+    r.w=ctx.measureText(r.text).width;
+    totalW+=r.w;
+  }
+
+  let curX=x;
+  if(align==="right") curX=x-totalW;
+  else if(align==="center") curX=x-totalW/2;
+
+  ctx.textAlign="left";
+  ctx.textBaseline=baseline||"bottom";
+
+  for(const r of runs){
+    ctx.font=(r.type==="sub"||r.type==="super")?subFont:font;
+    let curY=y;
+    if(r.type==="sub") curY+=subShift;
+    else if(r.type==="super") curY+=superShift;
+    ctx.fillText(r.text,curX,curY);
+    curX+=r.w;
+  }
+  ctx.restore();
+}
 
 function Plot(canvas,panel,meta){
   const ctx=canvas.getContext("2d");
@@ -1167,7 +1223,13 @@ function Plot(canvas,panel,meta){
     if(zlabel){
       ctx.save();ctx.fillStyle=css("--ink-mid");
       ctx.translate(W-3,y0+h/2);ctx.rotate(Math.PI/2);
-      ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(zlabel,0,0);ctx.restore();
+      const runs=parseRichText(zlabel);
+      if(runs){
+        drawRichText(ctx,runs,0,0,"center","top");
+      }else{
+        ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(zlabel,0,0);
+      }
+      ctx.restore();
     }
   }
 
@@ -1271,8 +1333,14 @@ function Plot(canvas,panel,meta){
       ctx.stroke();
       if(m.label){
         ctx.globalAlpha=1;ctx.fillStyle=css("--ink-mid");
-        if(vertical){ctx.textAlign="left";ctx.fillText(m.label,p+4,pad.t+11);}
-        else{ctx.textAlign="right";ctx.fillText(m.label,W-pad.r-4,p-3);}
+        const runs=parseRichText(m.label);
+        if(runs){
+          if(vertical) drawRichText(ctx,runs,p+4,pad.t+11,"left","bottom");
+          else drawRichText(ctx,runs,W-pad.r-4,p-3,"right","bottom");
+        }else{
+          if(vertical){ctx.textAlign="left";ctx.fillText(m.label,p+4,pad.t+11);}
+          else{ctx.textAlign="right";ctx.fillText(m.label,W-pad.r-4,p-3);}
+        }
       }
     }
     ctx.restore();
@@ -1833,7 +1901,7 @@ async function mountLive(fig, opts){
     plot=Plot(c,panel,{
       kind:"heatmap",
       live,
-      marks:[{axis:"y",value:1/(2*Math.PI),label:"K_c = 1/2\u03c0"}],
+      marks:[{axis:"y",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)"}],
       xlabel:"Bare frequency \u03a9",
       ylabel:"Nonlinearity K",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}
@@ -1899,7 +1967,7 @@ function buildParamControls(specs){
     const lab=document.createElement("label");lab.className="live-param";
     lab.dataset.param=spec.name;
     const name=document.createElement("span");name.className="live-param-name";
-    name.textContent=spec.name;
+    name.textContent=spec.label||spec.name;
     if(spec.options){
       // A discrete parameter (the torus figure's map selector) is a select,
       // not a slider pair; the wiring still sees a number.
@@ -1947,7 +2015,7 @@ function buildParamControls(specs){
    (viewport mapping, trace, debounce, hash) live there for node tests. */
 async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_STAIRCASE;
-  const title="Rotation number \u03c1(A) at drive frequency D";
+  const title="Rotation number \u03c1(K) at drive frequency \u03a9";
   try{
     const w=document.createElement("div");w.className="plot-wrap";
     const c=document.createElement("canvas");c.className="plot live";
@@ -1962,7 +2030,7 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
     const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
-    note.textContent="the image below is the published figure; its lower panel (Lyapunov exponent) is not live; only the \u03c1(A) curve above is computed in your browser";
+    note.textContent="the image below is the published figure; its lower panel (Lyapunov exponent) is not live; only the \u03c1(K) curve above is computed in your browser";
     body.insertBefore(note,w.nextSibling);
     const store=liveFigure.createStore(cfg);
     let pool=null,plot=null;
@@ -1978,8 +2046,8 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
     plot=Plot(c,panel,{
       kind:"line",
       live,
-      marks:[{axis:"x",value:1/(2*Math.PI),label:"K_c = 1/2\u03c0"}],
-      xlabel:"Nonlinearity A",
+      marks:[{axis:"x",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)"}],
+      xlabel:"Nonlinearity K",
       ylabel:"Rotation number \u03c1",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}
     });
@@ -2308,7 +2376,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
-    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose; the two preset buttons reproduce the zoom panels' windows";
+    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose";
     body.insertBefore(note,w.nextSibling);
     let plot=null;
     const writeHash=()=>{
@@ -2352,6 +2420,10 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     reset.addEventListener("click",()=>df.setParams({dMin:0,dMax:1}));
     presets.appendChild(reset);
     ctrls.appendChild(presets);
+    const presetCount=presets.querySelectorAll("button").length;
+    const numWords=["zero","one","two","three","four","five","six"];
+    const countWord=numWords[presetCount]||String(presetCount);
+    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose; the "+countWord+" presets reproduce the zoom panels' windows";
     const trace=df.store.trace;
     const panel={title,traces:[
       {name:"\u03c1\u03b8",x:trace.x,y:trace.y,color:"--slate"},
@@ -2552,7 +2624,7 @@ function showLiveLinkNote(fig,cfg,values,paramsMod){
     if(labEl&&labEl.textContent.trim()) label=labEl.textContent.trim();
     else{
       const spec=cfg.paramSpecs&&cfg.paramSpecs.find(s=>s.name===name);
-      if(spec&&spec.name) label=spec.name;
+      if(spec&&(spec.label||spec.name)) label=spec.label||spec.name;
     }
     parts.push(`${label} = ${values[name]}`);
   }
@@ -2857,6 +2929,7 @@ document.querySelectorAll("figure").forEach(fig=>{
           const mounted=fig.dataset.state==="live"?Promise.resolve():mountInteractive(fig);
           mounted.then(()=>{
             if(fig._live&&fig._live.setParams) fig._live.setParams(values);
+            showLiveLinkNote(fig,cfg,values,paramsMod);
           });
         })
       ).catch(()=>{});

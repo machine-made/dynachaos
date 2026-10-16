@@ -51,8 +51,8 @@ export function liveAutoStarts(width) {
 export const LIVE_ARNOLD = Object.freeze({nTransient: 200, nIter: 2000, theta0: 0.1});
 
 /**
- * The devil's staircase figure: rho(A) at a reader-chosen drive frequency D.
- * The paper computes D = 0.25, A in [0, 0.25], n_transient 5000, n_iter
+ * The devil's staircase figure: rho(K) at a reader-chosen drive frequency Ω.
+ * The paper computes Ω = 0.25, K in [0, 0.25], n_transient 5000, n_iter
  * 50000, theta0 0.1 (maps/circle_map.py). The tile kernel reads Omega = D
  * and K = A, so one tile column (n_omega = 1) at the current D is the whole
  * curve. D is capped at 0.5: rho stays under D + K <= 0.75, inside the
@@ -63,7 +63,7 @@ export const LIVE_STAIRCASE = Object.freeze({
   nIter: 50000,
   theta0: 0.1,
   paramSpecs: Object.freeze([
-    Object.freeze({ name: "D", label: "drive frequency D", min: 0, max: 0.5, step: 0.005, default: 0.25 }),
+    Object.freeze({ name: "D", label: "drive frequency \u03a9", min: 0, max: 0.5, step: 0.005, default: 0.25 }),
   ]),
 });
 
@@ -167,7 +167,7 @@ export const LIVE_TORUS = Object.freeze({
  * neighbourhood); A and C stay at the paper values, so rho_phi is C to
  * numerical precision and the curve is a flat line the reader can check.
  * `dMin`/`dMax` are the compute window and the plot's x domain at once —
- * the number fields, the two presets and a drag zoom all move the same
+ * the number fields, the three presets and a drag zoom all move the same
  * pair. `presets` reproduce the D windows of the zoom panels in
  * modulated_circle.py plot_zoom: longest_plateau_window(D, rho_theta,
  * target, 5e-4) on the committed npz padded by 0.008 (target 1/4) and

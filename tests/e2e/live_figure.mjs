@@ -952,6 +952,28 @@ try {
       `!!(${S} && Array.from(${S}.querySelectorAll(".hint")).some(n => /not live/i.test(n.textContent)))`,
     ),
   );
+  const stLabels = await ev(`(() => {
+    const fig = ${S};
+    if (!fig) return null;
+    const nameEl = fig.querySelector('.live-param[data-param="D"] .live-param-name');
+    const titleEl = fig.querySelector(".plot-title");
+    return {
+      controlLabel: nameEl ? nameEl.textContent.trim() : "",
+      titleText: titleEl ? titleEl.textContent.trim() : "",
+    };
+  })()`);
+  check(
+    "the staircase control label and title use the caption's K and Ω and not D or A",
+    Boolean(
+      stLabels &&
+        stLabels.controlLabel.includes("\u03a9") &&
+        !stLabels.controlLabel.includes("D") &&
+        stLabels.titleText.includes("K") &&
+        stLabels.titleText.includes("\u03a9") &&
+        !stLabels.titleText.includes("\u03c1(A)"),
+    ),
+    JSON.stringify(stLabels),
+  );
 
   // The readout at (D, A) must be the point kernel's value at that exact
   // pair — the same demand the flagship's wired check makes.
@@ -1015,6 +1037,17 @@ try {
         Math.abs(stTipVals.rho - stExpected) < 5e-3,
     ),
     JSON.stringify({ stTipVals, stExpected }),
+  );
+  const stTipText = stTip
+    ? await ev(`(() => {
+        const tip = ${S}.querySelector(".readout.on");
+        return tip ? tip.textContent.trim() : "";
+      })()`)
+    : "";
+  check(
+    "the staircase readout uses Nonlinearity K from the caption",
+    stTipText.includes("Nonlinearity K") && !stTipText.includes("Nonlinearity A"),
+    stTipText,
   );
 
   // Move D: the debounced apply must bump the generation, repaint, and write
@@ -1360,6 +1393,22 @@ try {
       `!!(${M} && ${M}.querySelector(".live-params input[type=range]") && ${M}.querySelectorAll(".live-params input[type=number]").length >= 3 && ${M}.querySelectorAll(".live-presets button").length === 3)`,
     ),
   );
+  const dsNote = await ev(`(() => {
+    const fig = ${M};
+    if (!fig) return null;
+    const note = Array.from(fig.querySelectorAll("p.hint")).find((n) => /preset/i.test(n.textContent));
+    const btnCount = fig.querySelectorAll(".live-presets button").length;
+    return {
+      text: note ? note.textContent.trim() : "",
+      btnCount,
+      hasThreePresets: note ? /three presets/i.test(note.textContent) : false,
+    };
+  })()`);
+  check(
+    "the double staircase note says three presets matching the preset button count",
+    Boolean(dsNote && dsNote.btnCount === 3 && dsNote.hasThreePresets),
+    JSON.stringify(dsNote),
+  );
 
   // One plotted rho_theta against the kernel computed the same way: the
   // page's own glue module answers modulated_circle_rotation_tile at the
@@ -1627,6 +1676,85 @@ try {
     JSON.stringify(sEnd),
   );
   await pullDebug();
+
+  // Control labels: for every .live-param of every live figure, the text of
+  // .live-param-name equals the input's aria-label (without " (number)"),
+  // read from the page, and never "eps", "dMin", "dMax", "n", "sites".
+  const paramLabelsReport = await ev(`(() => {
+    const params = Array.from(document.querySelectorAll(".live-param"));
+    if (!params.length) return null;
+    const forbidden = new Set(["eps", "dMin", "dMax", "n", "sites"]);
+    const results = [];
+    for (const p of params) {
+      const nameEl = p.querySelector(".live-param-name");
+      const text = nameEl ? nameEl.textContent.trim() : "";
+      const input = p.querySelector("input, select");
+      const aria = input ? (input.getAttribute("aria-label") || "") : "";
+      const cleanAria = aria.replace(/\\s*\\(number\\)$/, "").trim();
+      const matches = text === cleanAria && text.length > 0;
+      const notForbidden = !forbidden.has(text);
+      results.push({ param: p.dataset.param, text, cleanAria, matches, notForbidden });
+    }
+    const allMatches = results.every((r) => r.matches);
+    const noneForbidden = results.every((r) => r.notForbidden);
+    return { allMatches, noneForbidden, count: results.length, results };
+  })()`);
+  check(
+    "every live-param-name equals the input aria-label without number and never uses internal names",
+    Boolean(
+      paramLabelsReport &&
+        paramLabelsReport.allMatches &&
+        paramLabelsReport.noneForbidden &&
+        paramLabelsReport.count >= 11,
+    ),
+    JSON.stringify(paramLabelsReport),
+  );
+
+  // Marks and colour bar: K_c = 1/2π and x_i^n are drawn with real sub/superscripts.
+  // The check wraps CanvasRenderingContext2D.prototype.fillText, redraws the figures
+  // and asserts that no drawn string contains _c or ^n, and that the runs
+  // "K", "c", "1/(2π)" (and x, i, n for the colour bar) were drawn.
+  await ev(`(() => {
+    window.__canvasTextCalls = [];
+    const orig = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      window.__canvasTextCalls.push(String(text));
+      return orig.apply(this, arguments);
+    };
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.redraw) p.redraw();
+      }
+    }
+  })()`);
+  const canvasTextReport = await ev(`(() => {
+    const texts = window.__canvasTextCalls || [];
+    const hasUnderscoreC = texts.some((t) => t.includes("_c"));
+    const hasCaretN = texts.some((t) => t.includes("^n"));
+    const hasK = texts.includes("K");
+    const hasSubC = texts.includes("c");
+    const hasFrac = texts.some((t) => t === "1/(2π)" || t === "1/(2\\u03c0)");
+    const hasX = texts.includes("x");
+    const hasI = texts.includes("i");
+    const hasN = texts.includes("n");
+    return {
+      hasUnderscoreC,
+      hasCaretN,
+      hasK,
+      hasSubC,
+      hasFrac,
+      hasX,
+      hasI,
+      hasN,
+      ok: !hasUnderscoreC && !hasCaretN && hasK && hasSubC && hasFrac && hasX && hasI && hasN,
+      count: texts.length,
+    };
+  })()`);
+  check(
+    "marks and colour bar render subscripts and superscripts as separate runs without _c or ^n",
+    Boolean(canvasTextReport && canvasTextReport.ok),
+    JSON.stringify(canvasTextReport),
+  );
 
   // A shared link that still carries the old slider's D range: the hash
   // parse clamps 3 to the max, the figure mounts live on the link, and the
@@ -2119,14 +2247,20 @@ try {
       shared1440_30 &&
       shared1440_30.inView,
   );
+  const visibleDLabel = await ev(`(() => {
+    const el = ${S} && ${S}.querySelector('.live-param[data-param="D"] .live-param-name');
+    return el ? el.textContent.trim() : "";
+  })()`);
   check(
     "at 1440x900 a shared link scrolls the figure into view and shows the opened note",
     Boolean(
       settled1440 &&
         shared1440_30.hasButton &&
-        shared1440_30.noteText.includes("Opened with D = 0.4 from the link"),
+        visibleDLabel &&
+        visibleDLabel !== "D" &&
+        shared1440_30.noteText.includes("Opened with " + visibleDLabel + " = 0.4 from the link"),
     ),
-    JSON.stringify({ t03: shared1440_03, t10: shared1440_10, t30: shared1440_30 }),
+    JSON.stringify({ t03: shared1440_03, t10: shared1440_10, t30: shared1440_30, visibleDLabel }),
   );
 
   // Reset at 1440x900 returns to default
@@ -2212,9 +2346,11 @@ try {
     Boolean(
       settled390 &&
         shared390_30.hasButton &&
-        shared390_30.noteText.includes("Opened with D = 0.4 from the link"),
+        visibleDLabel &&
+        visibleDLabel !== "D" &&
+        shared390_30.noteText.includes("Opened with " + visibleDLabel + " = 0.4 from the link"),
     ),
-    JSON.stringify({ t03: shared390_03, t10: shared390_10, t30: shared390_30 }),
+    JSON.stringify({ t03: shared390_03, t10: shared390_10, t30: shared390_30, visibleDLabel }),
   );
 
   // Reset at 390x844 returns to default

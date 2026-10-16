@@ -103,6 +103,12 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 ### Changed
 
+- Live figures use the quantities and symbols from the paper captions across visible labels, plot
+  titles, and readouts, naming the devil's staircase sweep by nonlinearity K at drive frequency Ω.
+  Parameter sliders display readable names instead of internal keys, the double-staircase note
+  reflects the full set of three presets, and canvas marks and colour-bar labels render real
+  subscripts and superscripts.
+
 - The paper page links to the figure gallery from its top, the gallery links back, and gallery images use the caption as alt text.
 
 - On a 390 px phone the reading controls wrap inside the screen, a figure opened from a link or a
