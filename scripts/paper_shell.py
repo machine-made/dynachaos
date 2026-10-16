@@ -361,7 +361,7 @@ details.fig-code code.fig-snippet{font-family:var(--mono);font-size:0.72rem;line
    same caps to the title text one ASCII letter at a time (titleCaps). */
 .plot-title{margin:0 6rem 0.15rem;text-align:center;font-family:var(--mono);font-size:0.62rem;
   letter-spacing:0.1em;color:var(--ink-low);}
-canvas.plot{width:100%;display:block;touch-action:pan-y;}
+canvas.plot{width:100%;display:block;margin:0 auto;touch-action:pan-y;}
 canvas.plot.live{touch-action:none;}
 .hint{margin:0;padding:0 0.8rem 0.6rem;font-family:var(--mono);font-size:0.6rem;letter-spacing:0.06em;color:var(--ink-low);}
 .hint-toggle{appearance:none;background:none;border:1px solid var(--rule);border-radius:3px;color:var(--ink-low);
@@ -1478,8 +1478,35 @@ function Plot(canvas,panel,meta){
 
   function resize(){
     dpr=Math.min(devicePixelRatio||1,2);
-    const cw=canvas.clientWidth;if(!cw) return;
-    const chh=meta.aspect?Math.round(cw/meta.aspect):Math.round(Math.min(340,Math.max(200,cw*(heat?0.5:0.42))));
+    let cw=canvas.clientWidth;if(!cw) return;
+    let chh;
+    if(meta.aspect){
+      measurePads();
+      const padH=pad.l+pad.r,padV=pad.t+pad.b;
+      const maxH=Math.floor((window.innerHeight||900)*0.8);
+      let availW=cw;
+      if(wrap){
+        const cs=getComputedStyle(wrap);
+        availW=Math.floor(wrap.clientWidth-parseFloat(cs.paddingLeft||0)-parseFloat(cs.paddingRight||0));
+      }
+      const fullDw=availW-padH;
+      const fullDh=Math.round(fullDw/meta.aspect);
+      if(fullDh+padV>maxH){
+        chh=maxH;
+        const dh=chh-padV;
+        const dw=Math.round(dh*meta.aspect);
+        cw=dw+padH;
+      }else{
+        cw=availW;
+        chh=fullDh+padV;
+      }
+      canvas.style.width=cw<availW?cw+"px":"";
+      canvas.style.marginLeft=cw<availW?"auto":"";
+      canvas.style.marginRight=cw<availW?"auto":"";
+    }else{
+      chh=Math.round(Math.min(340,Math.max(200,cw*(heat?0.5:0.42))));
+    }
+    if(W===cw&&H===chh&&canvas.style.height===chh+"px"&&canvas.width===cw*dpr&&canvas.height===chh*dpr) return;
     canvas.style.height=chh+"px";
     canvas.width=cw*dpr;canvas.height=chh*dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);W=cw;H=chh;draw();
@@ -1778,12 +1805,14 @@ function Plot(canvas,panel,meta){
   });
 
   base=extent();dom={...base};anchor={...base};
-  const ro=new ResizeObserver(resize);ro.observe(canvas);resize();
+  const ro=new ResizeObserver(resize);ro.observe(wrap||canvas);resize();
   // destroy() lets the toggle-off path in mountInteractive fully retire this
   // instance: without disconnecting the observer here, an unmounted canvas
   // stays watched forever and MOUNTED would otherwise only ever grow.
   return {redraw:draw,resize,destroy:()=>{ro.disconnect();},
+    // The browser checks read the padding through getPad.
     getPad:()=>({...pad}),
+    // URL-state hooks (see the IIFE near the end of the file): read-only
     // access to the current/published domain, and a way in for a domain
     // that came from a shared link rather than a live drag or keypress.
     getDomain:()=>({...dom}),

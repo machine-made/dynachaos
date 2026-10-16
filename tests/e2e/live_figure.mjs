@@ -2025,9 +2025,19 @@ try {
         }
       }
     })()`);
-    await sleep(400);
+    await sleep(100);
+    const s05 = await ev(`(() => {
+      const c = document.getElementById("fig:spacetime_diagrams")?.querySelector("canvas.plot");
+      return c ? { w: c.clientWidth, h: c.clientHeight } : null;
+    })()`);
+    await sleep(1000);
+    const s15 = await ev(`(() => {
+      const c = document.getElementById("fig:spacetime_diagrams")?.querySelector("canvas.plot");
+      return c ? { w: c.clientWidth, h: c.clientHeight } : null;
+    })()`);
+    const stable = Boolean(s05 && s15 && s05.w === s15.w && s05.h === s15.h);
 
-    return await ev(`(() => {
+    const data = await ev(`(() => {
       window.__boxCalls = [];
       const origFill = CanvasRenderingContext2D.prototype.fillText;
       const origMeasure = CanvasRenderingContext2D.prototype.measureText;
@@ -2105,23 +2115,53 @@ try {
 
       const stFig = document.getElementById("fig:spacetime_diagrams");
       const stCanvas = stFig ? stFig.querySelector("canvas.plot") : null;
-      const stAspect = stCanvas && stCanvas.clientHeight ? stCanvas.clientWidth / stCanvas.clientHeight : null;
+      const stPlot = stFig && stFig._plots ? stFig._plots[0] : null;
+      const stPad = stPlot && stPlot.getPad ? stPlot.getPad() : null;
+      const stWrap = stFig ? stFig.querySelector(".plot-wrap") : null;
+      const stWidth = stCanvas ? stCanvas.clientWidth : null;
+      const stHeight = stCanvas ? stCanvas.clientHeight : null;
+      const stDataWidth = (stWidth !== null && stPad) ? stWidth - stPad.l - stPad.r : null;
+      const stDataHeight = (stHeight !== null && stPad) ? stHeight - stPad.t - stPad.b : null;
+      const stDataAspect = (stDataWidth !== null && stDataHeight && stDataHeight > 0) ? stDataWidth / stDataHeight : null;
+      const stCRect = stCanvas ? stCanvas.getBoundingClientRect() : null;
+      const stWRect = stWrap ? stWrap.getBoundingClientRect() : null;
+      const stLeftGap = (stCRect && stWRect) ? stCRect.left - stWRect.left : null;
+      const stRightGap = (stCRect && stWRect) ? stWRect.right - stCRect.right : null;
+      const stGapDiff = (stLeftGap !== null && stRightGap !== null) ? Math.abs(stLeftGap - stRightGap) : null;
+      const stCenteringOk = !stWrap || stWidth >= stWrap.clientWidth - 1 || (stGapDiff !== null && stGapDiff <= 1);
+      const otherFigs = Array.from(document.querySelectorAll("figure[data-live]")).filter((el) => el.id !== "fig:spacetime_diagrams");
+      const otherSizes = otherFigs.map((el) => {
+        const c = el.querySelector("canvas.plot");
+        return { id: el.id, cw: c ? c.clientWidth : null, ch: c ? c.clientHeight : null };
+      });
       const de = document.documentElement;
       const scrollWidth = de.scrollWidth;
       const clientWidth = de.clientWidth;
+      const innerHeight = window.innerHeight;
 
       return {
         figsCount: figs.length,
         overlaps,
         clippedTicks,
-        stAspect,
-        stWidth: stCanvas ? stCanvas.clientWidth : null,
-        stHeight: stCanvas ? stCanvas.clientHeight : null,
+        stWidth,
+        stHeight,
+        stPad,
+        stDataWidth,
+        stDataHeight,
+        stDataAspect,
+        wrapW: stWrap ? stWrap.clientWidth : null,
+        leftGap: stLeftGap,
+        rightGap: stRightGap,
+        gapDiff: stGapDiff,
+        centeringOk: stCenteringOk,
+        otherSizes,
+        innerHeight,
         scrollWidth,
         clientWidth,
         ok: figs.length >= 6 && overlaps.length === 0 && clippedTicks.length === 0,
       };
     })()`);
+    return { ...data, s05, s15, stable };
   }
 
   const boxes1440 = await measureBoxesAtViewport(1440, 900);
@@ -2138,18 +2178,93 @@ try {
     JSON.stringify(boxes390),
   );
 
-  // Item 2: space-time canvas client aspect matches published panel ratio within 5% at 1440x900 and 390x844
+  // Space-time diagram size criteria: data-area aspect, window fit, centring, stability, other figures unchanged
   const PUBLISHED_SPACETIME_ASPECT = 1.595588 / 1.751750; // measured 0.910854 from spatiotemporal.py
-  const stAspect1440Ok = Boolean(boxes1440 && boxes1440.stAspect && Math.abs(boxes1440.stAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
-  const stAspect390Ok = Boolean(boxes390 && boxes390.stAspect && Math.abs(boxes390.stAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
-  const stNoScroll390 = Boolean(boxes390 && boxes390.scrollWidth <= boxes390.clientWidth && boxes390.clientWidth === 390);
+  const stDataAspect1440Ok = Boolean(boxes1440 && boxes1440.stDataAspect && Math.abs(boxes1440.stDataAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
+  const stDataAspect390Ok = Boolean(boxes390 && boxes390.stDataAspect && Math.abs(boxes390.stDataAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
   check(
-    "the space-time canvas client aspect is within 5 % of the published panel ratio at 1440x900 and 390x844 without sideways scroll",
-    Boolean(stAspect1440Ok && stAspect390Ok && stNoScroll390),
+    "the space-time data area aspect is within 5 % of the published ratio at 1440x900 and 390x844",
+    Boolean(stDataAspect1440Ok && stDataAspect390Ok),
     JSON.stringify({
       publishedAspect: PUBLISHED_SPACETIME_ASPECT,
-      at1440: boxes1440 ? { w: boxes1440.stWidth, h: boxes1440.stHeight, aspect: boxes1440.stAspect, ok: stAspect1440Ok } : null,
-      at390: boxes390 ? { w: boxes390.stWidth, h: boxes390.stHeight, aspect: boxes390.stAspect, ok: stAspect390Ok, scrollWidth: boxes390.scrollWidth, clientWidth: boxes390.clientWidth, scrollOk: stNoScroll390 } : null,
+      at1440: boxes1440 ? { w: boxes1440.stWidth, h: boxes1440.stHeight, pad: boxes1440.stPad, dw: boxes1440.stDataWidth, dh: boxes1440.stDataHeight, aspect: boxes1440.stDataAspect, ok: stDataAspect1440Ok } : null,
+      at390: boxes390 ? { w: boxes390.stWidth, h: boxes390.stHeight, pad: boxes390.stPad, dw: boxes390.stDataWidth, dh: boxes390.stDataHeight, aspect: boxes390.stDataAspect, ok: stDataAspect390Ok } : null,
+    }),
+  );
+
+  const stWindowFit1440Ok = Boolean(boxes1440 && boxes1440.stHeight <= 0.8 * boxes1440.innerHeight);
+  const stWindowFit390Ok = Boolean(boxes390 && boxes390.stHeight <= 0.8 * boxes390.innerHeight);
+  check(
+    "the space-time canvas client height is at most 0.8 of the window innerHeight at 1440x900 and 390x844",
+    Boolean(stWindowFit1440Ok && stWindowFit390Ok),
+    JSON.stringify({
+      at1440: boxes1440 ? { h: boxes1440.stHeight, maxH: 0.8 * boxes1440.innerHeight, innerHeight: boxes1440.innerHeight, ok: stWindowFit1440Ok } : null,
+      at390: boxes390 ? { h: boxes390.stHeight, maxH: 0.8 * boxes390.innerHeight, innerHeight: boxes390.innerHeight, ok: stWindowFit390Ok } : null,
+    }),
+  );
+
+  const stCentering1440Ok = Boolean(boxes1440 && boxes1440.centeringOk);
+  const stCentering390Ok = Boolean(boxes390 && boxes390.centeringOk);
+  check(
+    "the space-time canvas is centred within its wrapper when narrower than its column",
+    Boolean(stCentering1440Ok && stCentering390Ok),
+    JSON.stringify({
+      at1440: boxes1440 ? { cw: boxes1440.stWidth, wrapW: boxes1440.wrapW, leftGap: boxes1440.leftGap, rightGap: boxes1440.rightGap, gapDiff: boxes1440.gapDiff, ok: stCentering1440Ok } : null,
+      at390: boxes390 ? { cw: boxes390.stWidth, wrapW: boxes390.wrapW, leftGap: boxes390.leftGap, rightGap: boxes390.rightGap, gapDiff: boxes390.gapDiff, ok: stCentering390Ok } : null,
+    }),
+  );
+
+  const stStability1440Ok = Boolean(boxes1440 && boxes1440.stable);
+  const stStability390Ok = Boolean(boxes390 && boxes390.stable && boxes390.scrollWidth <= boxes390.clientWidth && boxes390.clientWidth === 390);
+  check(
+    "the space-time canvas size is stable at 0.5 s and 1.5 s and the page has no sideways scroll at 390x844",
+    Boolean(stStability1440Ok && stStability390Ok),
+    JSON.stringify({
+      at1440: boxes1440 ? { s05: boxes1440.s05, s15: boxes1440.s15, stable: stStability1440Ok } : null,
+      at390: boxes390 ? { s05: boxes390.s05, s15: boxes390.s15, stable: stStability390Ok, scrollWidth: boxes390.scrollWidth, clientWidth: boxes390.clientWidth } : null,
+    }),
+  );
+
+  const OTHER_BASELINES = {
+    1440: {
+      "fig:arnold_tongues": { cw: 1029, ch: 340 },
+      "fig:devils_staircase": { cw: 1029, ch: 340 },
+      "fig:delayed_logistic_attractors": { cw: 1029, ch: 340 },
+      "fig:map_I_attractors": { cw: 1029, ch: 340 },
+      "fig:double_staircase": { cw: 1029, ch: 340 },
+    },
+    390: {
+      "fig:arnold_tongues": { cw: 324, ch: 200 },
+      "fig:devils_staircase": { cw: 324, ch: 200 },
+      "fig:delayed_logistic_attractors": { cw: 324, ch: 200 },
+      "fig:map_I_attractors": { cw: 324, ch: 200 },
+      "fig:double_staircase": { cw: 324, ch: 200 },
+    },
+  };
+  const other1440Ok = Boolean(
+    boxes1440 &&
+    boxes1440.otherSizes &&
+    boxes1440.otherSizes.length === 5 &&
+    boxes1440.otherSizes.every((o) => {
+      const b = OTHER_BASELINES[1440][o.id];
+      return b && o.cw === b.cw && o.ch === b.ch;
+    }),
+  );
+  const other390Ok = Boolean(
+    boxes390 &&
+    boxes390.otherSizes &&
+    boxes390.otherSizes.length === 5 &&
+    boxes390.otherSizes.every((o) => {
+      const b = OTHER_BASELINES[390][o.id];
+      return b && o.cw === b.cw && o.ch === b.ch;
+    }),
+  );
+  check(
+    "the other five live canvases retain their canvas client sizes at 1440x900 and 390x844",
+    Boolean(other1440Ok && other390Ok),
+    JSON.stringify({
+      at1440: boxes1440 ? boxes1440.otherSizes : null,
+      at390: boxes390 ? boxes390.otherSizes : null,
     }),
   );
 
