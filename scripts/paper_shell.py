@@ -1915,11 +1915,11 @@ async function mountLive(fig, opts){
     return;
   }
   if(fig.dataset.live==="double_staircase"){
-    await mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debugTracker});
+    await mountDoubleStaircase(fig,body,{poolMod,liveFigure,paramsMod,capText,debugTracker});
     return;
   }
   if(fig.dataset.live==="spacetime_diagrams"){
-    await mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debugTracker});
+    await mountSpacetime(fig,body,{poolMod,liveFigure,paramsMod,raster,capText,debugTracker});
     return;
   }
   const title="Rotation number over the circle-map parameter plane";
@@ -2422,10 +2422,15 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
    and a drag zoom all move the same pair through live-figure.js's range
    view. This function only builds DOM; the request shape, the trace fold,
    the window sync and the hash live in live-figure.js for node tests. */
-async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
+async function mountDoubleStaircase(fig,body,{poolMod,liveFigure,paramsMod,capText,debugTracker}){
   const cfg=liveFigure.LIVE_MODULATED;
   const title="Double devil's staircase";
   try{
+    const client=poolMod.createKernelClient({
+      workerUrl:new URL("live/tile-worker.js", document.baseURI)
+    });
+    fig._pool=client;
+    liveFigure.loadModulatedKernel().catch(()=>{});
     const w=document.createElement("div");w.className="plot-wrap";
     const c=document.createElement("canvas");c.className="plot live";
     c.setAttribute("role","img");
@@ -2450,6 +2455,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     const df=liveFigure.createModulatedFigure({
       params:cfg,
       debounceMs:150,
+      call:(req)=>client.call("modulated_circle_rotation_tile",req),
       echo:(name,v)=>{
         const f=inputs[name];
         if(f){if(f.range)f.range.value=v;if(f.num)f.num.value=v;}
@@ -2526,7 +2532,10 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
         painted:df.store.painted,
         points:df.store.trace.x.length
       })
-      ,destroy:()=>df.destroy()
+      ,destroy:()=>{
+        df.destroy();
+        if(client) client.destroy();
+      }
     };
     fig.dataset.state="live";
   }catch(err){
@@ -2547,10 +2556,14 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
    uniform x0). This function only builds DOM; the request shape, the
    field fold, the window trim, the model switch and the hash live in
    live-figure.js for node tests. */
-async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debugTracker}){
+async function mountSpacetime(fig,body,{poolMod,liveFigure,paramsMod,raster,capText,debugTracker}){
   const cfg=liveFigure.LIVE_SPACETIME;
   const title="Coupled-map lattice space-time";
   try{
+    const client=poolMod.createKernelClient({
+      workerUrl:new URL("live/tile-worker.js", document.baseURI)
+    });
+    fig._pool=client;
     const res=await fetch(new URL("live/cml-x0.json",document.baseURI).href);
     if(!res.ok) throw new Error("HTTP "+res.status);
     const x0=await res.json();
@@ -2595,6 +2608,7 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debu
       params:cfg,
       x0,
       debounceMs:150,
+      call:(req)=>client.call("cml_spacetime_tile",req),
       echo:(name,v)=>{
         const f=inputs[name];
         if(name==="model"){applyModel(cfg.models[v]);setTitle();return;}
@@ -2666,7 +2680,10 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debu
         rows:cf.store.field?cf.store.field.nRows:0,
         sites:cf.store.field?cf.store.field.nSites:0
       })
-      ,destroy:()=>cf.destroy()
+      ,destroy:()=>{
+        cf.destroy();
+        if(client) client.destroy();
+      }
     };
     fig.dataset.state="live";
   }catch(err){

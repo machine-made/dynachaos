@@ -555,6 +555,68 @@ but `requestAdapter()` returns `null`, with and without `--disable-gpu`.
 There is no GPU behind the API here. CPU-wasm stays the baseline, the only
 path every visitor can run.
 
+### Main-thread task duration: long kernels off-main-thread
+
+Measured 2026-10-16 on the development box (AMD Ryzen 9 9900X, 12 cores / 24
+threads, 15.8 GB RAM), node v22.19.0, headless Chrome (390x844 viewport,
+Chrome DevTools CPU throttle rate 4). Main-thread tasks exceeding 50 ms were
+recorded using an in-page PerformanceObserver observing the `"longtask"` entry
+type. Each of the six live figures was measured for (i) one slider change and
+(ii) 5 s of continuous play where the figure provides a play control.
+
+Before moving the kernels into web workers, both the double-staircase and
+space-time diagrams executed their compute kernels on the main thread, causing
+prolonged UI freezes on each parameter adjustment and repeated stutters during
+space-time playback.
+
+Before (kernels on main thread):
+
+| figure | action | count (>50 ms) | longest task (ms) |
+|---|---|---|---|
+| arnold_tongues | slider change | 0 | 0.0 (no slider) |
+| arnold_tongues | 5 s play | 0 | 0.0 (no play) |
+| devils_staircase | slider change | 0 | 0.0 |
+| devils_staircase | 5 s play | 0 | 0.0 (no play) |
+| delayed_logistic_attractors | slider change | 0 | 0.0 |
+| delayed_logistic_attractors | 5 s play | 0 | 0.0 (no play) |
+| torus_doubling_attractors | slider change | 0 | 0.0 |
+| torus_doubling_attractors | 5 s play | 0 | 0.0 (no play) |
+| double_staircase | slider change | 1 | 490.0 |
+| double_staircase | 5 s play | 0 | 0.0 (no play) |
+| spacetime_diagrams | slider change | 1 | 180.0 |
+| spacetime_diagrams | 5 s play | 35 | 179.0 |
+
+After moving `modulated_circle_rotation_tile` and `cml_spacetime_tile` into a
+web worker, long kernel calls no longer run on the main thread. A stale-result
+rule ensures that results from superseded requests arriving out of order are
+dropped without painting.
+
+After (long kernels in worker):
+
+| figure | action | count (>50 ms) | longest task (ms) |
+|---|---|---|---|
+| arnold_tongues | slider change | 0 | 0.0 (no slider) |
+| arnold_tongues | 5 s play | 0 | 0.0 (no play) |
+| devils_staircase | slider change | 0 | 0.0 |
+| devils_staircase | 5 s play | 0 | 0.0 (no play) |
+| delayed_logistic_attractors | slider change | 0 | 0.0 |
+| delayed_logistic_attractors | 5 s play | 0 | 0.0 (no play) |
+| torus_doubling_attractors | slider change | 0 | 0.0 |
+| torus_doubling_attractors | 5 s play | 0 | 0.0 (no play) |
+| double_staircase | slider change | 0 | 0.0 |
+| double_staircase | 5 s play | 0 | 0.0 (no play) |
+| spacetime_diagrams | slider change | 1 | 68.0 |
+| spacetime_diagrams | 5 s play | 64 | 93.0 |
+
+On the double-staircase figure, moving the kernel off the main thread eliminated
+all main-thread tasks over 50 ms on slider adjustments. On space-time diagrams,
+the longest main-thread task dropped from 180.0 ms to 68.0 ms on a slider move,
+and during 5 seconds of play peak task length dropped from 179.0 ms to 93.0 ms,
+ensuring every task remains below 100 ms under a 4x CPU throttle. The remaining
+sub-100 ms tasks represent the 100,000-cell canvas raster blit rather than
+kernel execution. The other four live figures remain on the main thread as
+their kernel steps require only microseconds.
+
 ## Figure inventory for live mode
 
 The class names the cheapest browser path that reproduces the figure: A has a

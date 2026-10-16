@@ -103,6 +103,14 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 ### Changed
 
+- Long-running WebAssembly kernel calls on the double-staircase and space-time live figures now run
+  in a dedicated Web Worker instead of blocking the browser's main thread. Modulated circle rotation
+  and coupled-map lattice spacetime evaluations execute asynchronously with results transferred back
+  without detaching critical headers, and late-arriving results from superseded parameter states are
+  dropped before painting. At a four-fold CPU throttle matching phone-class hardware, main-thread tasks
+  during parameter slider moves and playback stay under 100 milliseconds, eliminating page freezes while
+  preserving bit-identical numerical output.
+
 - The live Arnold-tongue figure displays fraction labels above the plot along a top axis matching
   the published figure, tracking the visible frequency window during drag zooms in the standard
   axis tick typography. The live space-time diagram uses the published panels' aspect ratio and

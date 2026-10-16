@@ -297,3 +297,62 @@ export function createPool(options = {}) {
     },
   };
 }
+
+/**
+ * A dedicated worker client for one-off kernel calls (double staircase, space-time).
+ * Keeps one worker alive with dynachaos_wasm loaded.
+ *
+ * @param {object} [options]
+ * @param {typeof Worker} [options.Worker]
+ * @param {URL|string} [options.workerUrl]
+ * @returns {{ call: (kernel: string, req: object) => Promise<Float64Array>, destroy: () => void }}
+ */
+export function createKernelClient(options = {}) {
+  const WorkerImpl = options.Worker || globalThis.Worker;
+  if (typeof WorkerImpl !== "function") {
+    throw new Error("createKernelClient needs Worker");
+  }
+  const workerUrl = options.workerUrl || new URL("./tile-worker.js", import.meta.url);
+  const worker = new WorkerImpl(workerUrl, { type: "module" });
+  let nextId = 0;
+  const inFlight = new Map();
+
+  worker.onmessage = (event) => {
+    const msg = event && event.data;
+    if (!msg || (msg.type !== "result" && msg.type !== "error")) return;
+    const pending = inFlight.get(msg.id);
+    if (!pending) return;
+    inFlight.delete(msg.id);
+    if (msg.type === "result") {
+      pending.resolve(msg.data);
+    } else {
+      pending.reject(new Error(msg.message || "worker error"));
+    }
+  };
+
+  worker.onerror = (err) => {
+    for (const pending of inFlight.values()) {
+      pending.reject(new Error(err && err.message ? err.message : "worker error"));
+    }
+    inFlight.clear();
+  };
+
+  return {
+    call(kernel, req) {
+      return new Promise((resolve, reject) => {
+        const id = ++nextId;
+        inFlight.set(id, { resolve, reject });
+        worker.postMessage({ type: "tile", id, kernel, ...req });
+      });
+    },
+    destroy() {
+      for (const pending of inFlight.values()) {
+        pending.reject(new Error("destroyed"));
+      }
+      inFlight.clear();
+      if (typeof worker.terminate === "function") {
+        worker.terminate();
+      }
+    },
+  };
+}

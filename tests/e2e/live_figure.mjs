@@ -1435,6 +1435,18 @@ try {
   // new value into the hash. The range input snaps to its step, so the
   // check reads back the snapped value rather than assuming it.
   const mBefore = await mStats();
+  await send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await ev(`(() => {
+    window.__longTasksM = [];
+    if (!window.__longTaskObsM) {
+      window.__longTaskObsM = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) window.__longTasksM.push(e.duration);
+      });
+      window.__longTaskObsM.observe({ entryTypes: ["longtask"] });
+    }
+    window.__longTasksM = [];
+    return true;
+  })()`);
   const mSet = await ev(`(() => {
     const r = ${M}.querySelector(".live-params input[type=range]");
     r.value = "0.12";
@@ -1445,6 +1457,18 @@ try {
     `!!${M}._live && ${M}._live.stats().generation > ${mBefore ? mBefore.generation : -1} && ${M}._live.stats().painted >= 1`,
     FIRST_PAINT_MS,
     100,
+  );
+  const mLongest = await ev(`(() => {
+    if (window.__longTaskObsM && typeof window.__longTaskObsM.takeRecords === "function") {
+      for (const e of window.__longTaskObsM.takeRecords()) window.__longTasksM.push(e.duration);
+    }
+    return window.__longTasksM.reduce((max, d) => Math.max(max, d), 0);
+  })()`);
+  await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  check(
+    "during one slider change on double_staircase the longest main-thread task is under 100 ms",
+    mLongest < 100,
+    `longest task ${mLongest.toFixed(1)} ms`,
   );
   await waitFor(`location.hash.includes("eps=" + ${JSON.stringify(mSet)})`, 5_000);
   const mHash = await ev("location.hash");
@@ -1560,6 +1584,45 @@ try {
       cCheck.rows === cCheck.nRecord,
     JSON.stringify(cCheck),
   );
+  // Move eps under 4x throttle on model A: with the kernel in a worker, no
+  // main-thread task exceeds 100 ms.
+  const cBeforeA = await cStats();
+  await send("Emulation.setCPUThrottlingRate", { rate: 4 });
+  await ev(`(() => {
+    window.__longTasksC = [];
+    if (!window.__longTaskObsC) {
+      window.__longTaskObsC = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) window.__longTasksC.push(e.duration);
+      });
+      window.__longTaskObsC.observe({ entryTypes: ["longtask"] });
+    }
+    window.__longTasksC = [];
+    return true;
+  })()`);
+  await ev(`(() => {
+    const r = ${C}.querySelector(".live-params input[type=range]");
+    r.value = "0.15";
+    r.dispatchEvent(new Event("input", { bubbles: true }));
+    return r.value;
+  })()`);
+  await waitFor(
+    `!!${C}._live && ${C}._live.stats().generation > ${cBeforeA ? cBeforeA.generation : -1} && ${C}._live.stats().painted >= 1`,
+    FIRST_PAINT_MS,
+    100,
+  );
+  const cLongest = await ev(`(() => {
+    if (window.__longTaskObsC && typeof window.__longTaskObsC.takeRecords === "function") {
+      for (const e of window.__longTaskObsC.takeRecords()) window.__longTasksC.push(e.duration);
+    }
+    return window.__longTasksC.reduce((max, d) => Math.max(max, d), 0);
+  })()`);
+  await send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  check(
+    "during one slider change on spacetime_diagrams the longest main-thread task is under 100 ms",
+    cLongest < 100,
+    `longest task ${cLongest.toFixed(1)} ms`,
+  );
+
 
   // Switch to model C: the selector must move eps into the new model's
   // window (its published default 0.2), repaint a new generation, and

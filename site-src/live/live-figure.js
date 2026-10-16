@@ -1479,7 +1479,15 @@ export function cmlAppend(field, tile, nRecord) {
  */
 export function cmlColorLimits(values) {
   if (!values || !values.length) return [0, 1];
-  const sorted = Array.from(values).filter(Number.isFinite).sort((a, b) => a - b);
+  let sorted;
+  if (values instanceof Float64Array) {
+    sorted = values.slice().sort();
+    let end = sorted.length;
+    while (end > 0 && !Number.isFinite(sorted[end - 1])) end--;
+    if (end < sorted.length) sorted = sorted.subarray(0, end);
+  } else {
+    sorted = Array.from(values).filter(Number.isFinite).sort((a, b) => a - b);
+  }
   if (!sorted.length) return [0, 1];
   const at = (p) => {
     const h = (p / 100) * (sorted.length - 1);

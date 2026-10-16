@@ -10,7 +10,12 @@
  * onmessage; importing it from node for a smoke run does not start a listener.
  */
 
-import init, { initSync, rotation_number_tile } from "../wasm/dynachaos_wasm.js";
+import init, {
+  initSync,
+  rotation_number_tile,
+  modulated_circle_rotation_tile,
+  cml_spacetime_tile,
+} from "../wasm/dynachaos_wasm.js";
 
 const HEADER = 4;
 let ready = null;
@@ -41,17 +46,42 @@ function now() {
 export async function computeTile(msg) {
   const t0 = now();
   await ensureReady();
-  const out = rotation_number_tile(
-    msg.omegaMin,
-    msg.omegaMax,
-    msg.nOmega,
-    msg.kMin,
-    msg.kMax,
-    msg.nK,
-    msg.nTransient,
-    msg.nIter,
-    msg.theta0,
-  );
+  let out;
+  if (msg.kernel === "modulated_circle_rotation_tile") {
+    out = modulated_circle_rotation_tile(
+      msg.a,
+      msg.c,
+      msg.dMin,
+      msg.dMax,
+      msg.nD,
+      msg.eps,
+      msg.nTransient,
+      msg.nIter,
+      msg.theta0,
+      msg.phi0,
+    );
+  } else if (msg.kernel === "cml_spacetime_tile") {
+    out = cml_spacetime_tile(
+      msg.model,
+      msg.eps,
+      msg.nSites,
+      msg.nTransient,
+      msg.nRecord,
+      msg.x0,
+    );
+  } else {
+    out = rotation_number_tile(
+      msg.omegaMin,
+      msg.omegaMax,
+      msg.nOmega,
+      msg.kMin,
+      msg.kMax,
+      msg.nK,
+      msg.nTransient,
+      msg.nIter,
+      msg.theta0,
+    );
+  }
   const computeMs = now() - t0;
   if (out == null || out.length < HEADER) {
     return {
@@ -76,7 +106,7 @@ const workerScope = typeof self !== "undefined" ? self : undefined;
 if (workerScope && typeof workerScope.postMessage === "function") {
   workerScope.onmessage = async (event) => {
     const msg = event && event.data;
-    if (!msg || msg.type !== "tile") return;
+    if (!msg || (msg.type !== "tile" && msg.type !== "kernel")) return;
     try {
       const reply = await computeTile(msg);
       if (reply.type === "result" && reply.data && reply.data.buffer) {

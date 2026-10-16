@@ -60,7 +60,7 @@ import {
   tileWorld,
 } from "../../site-src/live/raster.js";
 import { visibleTiles } from "../../site-src/live/scheduler.js";
-import { createPool } from "../../site-src/live/pool.js";
+import { createPool, createKernelClient } from "../../site-src/live/pool.js";
 
 const VIEWPORT = { omegaMin: 0, omegaMax: 1, kMin: 0, kMax: 0.3 };
 
@@ -2079,4 +2079,145 @@ test("buildHint with play returns a play-specific short hint under 80 characters
   assert.equal(hint.shortText, LIVE_HINT_SHORT_PLAY);
   assert.equal(hint.fullText, LIVE_HINT_FULL_PLAY);
   assert.ok(hint.fullText.includes("play appends new rows and drops the oldest"));
+});
+
+test("worker stale-result rule: a result older than the newest request is dropped and never painted when replies arrive in reverse order", async () => {
+  const timers = manualTimers();
+  const deferreds = [];
+  const paints = [];
+  const fig = createModulatedFigure({
+    debounceMs: 150,
+    echo: () => {},
+    call: (req) => new Promise((resolve) => deferreds.push({ req, resolve })),
+    onTrace: (store, trace, req) => paints.push({ eps: req.eps, y: [...trace.y] }),
+    writeHash: () => {},
+    getPlot: () => null,
+    timers,
+  });
+
+  fig.onInput("eps", 0.05);
+  timers.flush();
+  assert.equal(deferreds.length, 1);
+  assert.equal(deferreds[0].req.eps, 0.05);
+
+  fig.onInput("eps", 0.12);
+  timers.flush();
+  assert.equal(deferreds.length, 2);
+  assert.equal(deferreds[1].req.eps, 0.12);
+
+  // Newer reply arrives first: painted
+  const tileFor = (eps) => new Float64Array([1, 3000, 20000, 2, eps, 0.6]);
+  deferreds[1].resolve(tileFor(0.12));
+  await tick();
+
+  assert.equal(paints.length, 1);
+  assert.equal(paints[0].eps, 0.12);
+  assert.deepEqual(fig.store.trace.y, [0.12]);
+  assert.equal(fig.store.generation, 2);
+
+  // Older reply arrives in reverse order: dropped, never painted
+  deferreds[0].resolve(tileFor(0.05));
+  await tick();
+
+  assert.equal(paints.length, 1);
+  assert.deepEqual(fig.store.trace.y, [0.12]);
+  assert.equal(fig.store.generation, 2);
+});
+
+test("worker computeTile returns same Float64Array element by element as direct modulated_circle_rotation_tile call", async () => {
+  const { computeTile } = await import("../../site/live/tile-worker.js");
+  const glue = await import("../../site/wasm/dynachaos_wasm.js");
+  const { readFile } = await import("node:fs/promises");
+  const bytes = await readFile(new URL("../../site/wasm/dynachaos_wasm_bg.wasm", import.meta.url));
+  glue.initSync({ module: bytes });
+
+  const req = {
+    kernel: "modulated_circle_rotation_tile",
+    a: 0.1,
+    c: 0.6180339887498949,
+    dMin: 0.2,
+    dMax: 0.6,
+    nD: 16,
+    eps: 0.05,
+    nTransient: 300,
+    nIter: 2000,
+    theta0: 0.1,
+    phi0: 0.1,
+  };
+
+  const direct = glue.modulated_circle_rotation_tile(
+    req.a, req.c, req.dMin, req.dMax, req.nD, req.eps,
+    req.nTransient, req.nIter, req.theta0, req.phi0,
+  );
+  const workerReply = await computeTile(req);
+  assert.equal(workerReply.type, "result");
+  const workerData = workerReply.data;
+
+  assert.ok(direct instanceof Float64Array);
+  assert.ok(workerData instanceof Float64Array);
+  assert.equal(direct.length, workerData.length);
+  for (let i = 0; i < direct.length; i++) {
+    assert.ok(
+      Object.is(direct[i], workerData[i]),
+      `element ${i} mismatch: direct ${direct[i]} vs worker ${workerData[i]}`,
+    );
+  }
+});
+
+test("worker computeTile returns same Float64Array element by element as direct cml_spacetime_tile call", async () => {
+  const { computeTile } = await import("../../site/live/tile-worker.js");
+  const glue = await import("../../site/wasm/dynachaos_wasm.js");
+  const { readFile } = await import("node:fs/promises");
+  const bytes = await readFile(new URL("../../site/wasm/dynachaos_wasm_bg.wasm", import.meta.url));
+  glue.initSync({ module: bytes });
+
+  const x0 = new Float64Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]);
+  const req = {
+    kernel: "cml_spacetime_tile",
+    model: 0,
+    eps: 0.1,
+    nSites: 8,
+    nTransient: 200,
+    nRecord: 50,
+    x0,
+  };
+
+  const direct = glue.cml_spacetime_tile(
+    req.model, req.eps, req.nSites, req.nTransient, req.nRecord, req.x0,
+  );
+  const workerReply = await computeTile(req);
+  assert.equal(workerReply.type, "result");
+  const workerData = workerReply.data;
+
+  assert.ok(direct instanceof Float64Array);
+  assert.ok(workerData instanceof Float64Array);
+  assert.equal(direct.length, workerData.length);
+  for (let i = 0; i < direct.length; i++) {
+    assert.ok(
+      Object.is(direct[i], workerData[i]),
+      `element ${i} mismatch: direct ${direct[i]} vs worker ${workerData[i]}`,
+    );
+  }
+});
+
+test("createKernelClient handles request, resolves result and terminates cleanly", async () => {
+  const FakeWorker = makeFakeWorkerClass();
+  const client = createKernelClient({ Worker: FakeWorker });
+  assert.equal(FakeWorker.instances.length, 1);
+  const worker = FakeWorker.instances[0];
+
+  const callPromise = client.call("modulated_circle_rotation_tile", { a: 0.1 });
+  assert.equal(worker.posted.length, 1);
+  const msg = worker.posted[0];
+  assert.equal(msg.type, "tile");
+  assert.equal(msg.kernel, "modulated_circle_rotation_tile");
+  assert.equal(msg.a, 0.1);
+
+  const mockData = new Float64Array([1, 2, 3, 4]);
+  worker.onmessage({ data: { type: "result", id: msg.id, data: mockData } });
+  const result = await callPromise;
+  assert.equal(result, mockData);
+
+  client.destroy();
+  assert.equal(worker.terminated, true);
 });
