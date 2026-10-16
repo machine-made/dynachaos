@@ -1204,18 +1204,12 @@ function Plot(canvas,panel,meta){
       let zw=0;
       for(const t of ticks(zlo,zhi,4)) zw=Math.max(zw,ctx.measureText(fmtSpan(t,zhi-zlo,4)).width);
       pad.r=12+CBAR+8+Math.ceil(zw)+(zlabel?16:4);
-    }else{
-      const xt=ticks(dom.x0,dom.x1,5);
-      if(xt.length){
-        const lastW=ctx.measureText(fmtSpan(xt[xt.length-1],xspan,5)).width;
-        pad.r=Math.max(14,Math.ceil(lastW/2)+6);
-      }
     }
     // Legend rows need pad.l/pad.r settled first (they bound the available
     // width); pad.t is then sized to whatever the legend actually needs
     // instead of a fixed guess, so traces are never drawn under it.
     legendLayout=layoutLegend();
-    pad.t=legendLayout?10+legendLayout.length*LEGEND_ROWH+4:10;
+    pad.t=(legendLayout?10+legendLayout.length*LEGEND_ROWH+4:10)+(meta.topLabels?12:0);
   }
   const zlabel=panel.zlabel||"";
 
@@ -1344,7 +1338,7 @@ function Plot(canvas,panel,meta){
       const vertical=m.axis==="x";
       const p=vertical?sx(m.value):sy(m.value);
       if(vertical?(p<pad.l||p>W-pad.r):(p<pad.t||p>H-pad.b))continue;
-      const c=css(m.color||(m.label&&m.label.startsWith("K_c")?"--vermilion":"--ink-mid"));
+      const c=css(m.color||"--ink-mid");
       ctx.strokeStyle=c;ctx.globalAlpha=.75;
       ctx.beginPath();
       if(vertical){ctx.moveTo(p+0.5,pad.t);ctx.lineTo(p+0.5,H-pad.b);}
@@ -1384,6 +1378,15 @@ function Plot(canvas,panel,meta){
       const x=Math.round(sx(t))+0.5;if(x<pad.l-1||x>W-pad.r+1)continue;
       if(!heat){ctx.globalAlpha=.4;ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();ctx.globalAlpha=1;}
       ctx.fillText(fmtSpan(t,xspan,5),x,H-pad.b+7);
+    }
+    if(meta.topLabels){
+      ctx.textAlign="center";ctx.textBaseline="bottom";
+      for(const tl of meta.topLabels){
+        if(tl.value<dom.x0-1e-9||tl.value>dom.x1+1e-9) continue;
+        const x=sx(tl.value);
+        if(x<pad.l-1||x>W-pad.r+1) continue;
+        ctx.fillText(tl.label,x,pad.t-4);
+      }
     }
     ctx.fillStyle=mid;ctx.textAlign="center";ctx.textBaseline="bottom";
     // meta.labelFont swaps the axis labels' mono for the paper's math
@@ -1476,7 +1479,7 @@ function Plot(canvas,panel,meta){
   function resize(){
     dpr=Math.min(devicePixelRatio||1,2);
     const cw=canvas.clientWidth;if(!cw) return;
-    const chh=Math.round(Math.min(340,Math.max(200,cw*(heat?0.5:0.42))));
+    const chh=meta.aspect?Math.round(cw/meta.aspect):Math.round(Math.min(340,Math.max(200,cw*(heat?0.5:0.42))));
     canvas.style.height=chh+"px";
     canvas.width=cw*dpr;canvas.height=chh*dpr;
     ctx.setTransform(dpr,0,0,dpr,0,0);W=cw;H=chh;draw();
@@ -1780,7 +1783,7 @@ function Plot(canvas,panel,meta){
   // instance: without disconnecting the observer here, an unmounted canvas
   // stays watched forever and MOUNTED would otherwise only ever grow.
   return {redraw:draw,resize,destroy:()=>{ro.disconnect();},
-    // URL-state hooks (see the IIFE near the end of the file): read-only
+    getPad:()=>({...pad}),
     // access to the current/published domain, and a way in for a domain
     // that came from a shared link rather than a live drag or keypress.
     getDomain:()=>({...dom}),
@@ -1922,6 +1925,13 @@ async function mountLive(fig, opts){
       kind:"heatmap",
       live,
       marks:[{axis:"y",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)",color:"--vermilion"}],
+      topLabels:[
+        {value:0,label:"0/1"},
+        {value:1/3,label:"1/3"},
+        {value:1/2,label:"1/2"},
+        {value:2/3,label:"2/3"},
+        {value:1,label:"1/1"}
+      ],
       xlabel:"Bare frequency \u03a9",
       ylabel:"Nonlinearity K",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}
@@ -2588,6 +2598,7 @@ async function mountSpacetime(fig,body,{liveFigure,paramsMod,raster,capText,debu
     plot=Plot(c,panel,{
       kind:"heatmap",
       live,
+      aspect:1.595588/1.751750,
       xlabel:"Site i",
       ylabel:"Time n",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}

@@ -103,6 +103,11 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 ### Changed
 
+- The live Arnold-tongue figure displays fraction labels above the plot along a top axis matching
+  the published figure, tracking the visible frequency window during drag zooms in the standard
+  axis tick typography. The live space-time diagram matches the aspect ratio of the published
+  individual panels across desktop and mobile viewports without sideways page scrolling.
+
 - Live canvas tick numbers use the same serif typeface as the axis labels, and padding reserves
   room measured against the drawn face. Rotated vertical axis labels no longer intersect tick
   numbers, and horizontal tick numbers remain inside the canvas width at both desktop and mobile

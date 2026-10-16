@@ -2103,10 +2103,22 @@ try {
         }
       }
 
+      const stFig = document.getElementById("fig:spacetime_diagrams");
+      const stCanvas = stFig ? stFig.querySelector("canvas.plot") : null;
+      const stAspect = stCanvas && stCanvas.clientHeight ? stCanvas.clientWidth / stCanvas.clientHeight : null;
+      const de = document.documentElement;
+      const scrollWidth = de.scrollWidth;
+      const clientWidth = de.clientWidth;
+
       return {
         figsCount: figs.length,
         overlaps,
         clippedTicks,
+        stAspect,
+        stWidth: stCanvas ? stCanvas.clientWidth : null,
+        stHeight: stCanvas ? stCanvas.clientHeight : null,
+        scrollWidth,
+        clientWidth,
         ok: figs.length >= 6 && overlaps.length === 0 && clippedTicks.length === 0,
       };
     })()`);
@@ -2126,6 +2138,143 @@ try {
     JSON.stringify(boxes390),
   );
 
+  // Item 2: space-time canvas client aspect matches published panel ratio within 5% at 1440x900 and 390x844
+  const PUBLISHED_SPACETIME_ASPECT = 1.595588 / 1.751750; // measured 0.910854 from spatiotemporal.py
+  const stAspect1440Ok = Boolean(boxes1440 && boxes1440.stAspect && Math.abs(boxes1440.stAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
+  const stAspect390Ok = Boolean(boxes390 && boxes390.stAspect && Math.abs(boxes390.stAspect - PUBLISHED_SPACETIME_ASPECT) / PUBLISHED_SPACETIME_ASPECT <= 0.05);
+  const stNoScroll390 = Boolean(boxes390 && boxes390.scrollWidth <= boxes390.clientWidth && boxes390.clientWidth === 390);
+  check(
+    "the space-time canvas client aspect is within 5 % of the published panel ratio at 1440x900 and 390x844 without sideways scroll",
+    Boolean(stAspect1440Ok && stAspect390Ok && stNoScroll390),
+    JSON.stringify({
+      publishedAspect: PUBLISHED_SPACETIME_ASPECT,
+      at1440: boxes1440 ? { w: boxes1440.stWidth, h: boxes1440.stHeight, aspect: boxes1440.stAspect, ok: stAspect1440Ok } : null,
+      at390: boxes390 ? { w: boxes390.stWidth, h: boxes390.stHeight, aspect: boxes390.stAspect, ok: stAspect390Ok, scrollWidth: boxes390.scrollWidth, clientWidth: boxes390.clientWidth, scrollOk: stNoScroll390 } : null,
+    }),
+  );
+
+  // Item 1: live Arnold top fraction labels and domain tracking
+  const arnoldTopLabelsCheck = await ev(`(() => {
+    const f = document.getElementById("fig:arnold_tongues");
+    if (!f || !f._plots || !f._plots[0]) return { ok: false, reason: "no arnold plot" };
+    const plot = f._plots[0];
+    const pad = plot.getPad ? plot.getPad() : null;
+
+    const otherFigs = Array.from(document.querySelectorAll("figure[data-live]")).filter((el) => el.id !== "fig:arnold_tongues");
+    const otherPads = otherFigs.map((el) => ({ id: el.id, pad: el._plots && el._plots[0] && el._plots[0].getPad ? el._plots[0].getPad() : null }));
+    // Figures without legend (devils_staircase, spacetime) have pad.t = 10, those with legend have 28; only Arnold grew to 22
+    const padGrew = Boolean(pad && pad.t === 22 && otherPads.every((o) => !o.pad || o.pad.t !== 22));
+    const de = document.documentElement;
+    const computedSerif = getComputedStyle(de).getPropertyValue("--serif").trim();
+    const primaryFamily = computedSerif.split(",")[0].trim().replace(/['"]/g, "");
+
+    window.__topCalls = [];
+    const origFill = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      const canvas = this.canvas;
+      const fig = canvas ? canvas.closest("figure[data-live]") : null;
+      if (fig) {
+        window.__topCalls.push({
+          figId: fig.id,
+          text: String(text),
+          x, y,
+          font: this.font,
+          fillStyle: this.fillStyle,
+          textAlign: this.textAlign,
+          textBaseline: this.textBaseline,
+        });
+      }
+      return origFill.apply(this, arguments);
+    };
+
+    plot.redraw();
+
+    const expectedLabels = [
+      { text: "0/1", val: 0 },
+      { text: "1/3", val: 1 / 3 },
+      { text: "1/2", val: 0.5 },
+      { text: "2/3", val: 2 / 3 },
+      { text: "1/1", val: 1 },
+    ];
+
+    const calls = window.__topCalls || [];
+    const arnoldCalls = calls.filter((c) => c.figId === "fig:arnold_tongues");
+    const otherCalls = calls.filter((c) => c.figId !== "fig:arnold_tongues");
+    const otherHasTopLabels = otherCalls.some((c) => ["0/1", "1/3", "1/2", "2/3", "1/1"].includes(c.text));
+
+    const dom0 = plot.getDomain();
+    const canvas = f.querySelector("canvas.plot");
+    const W = canvas.clientWidth;
+    const sx = (v) => pad.l + (v - dom0.x0) / (dom0.x1 - dom0.x0) * (W - pad.l - pad.r);
+
+    const fullLabels = [];
+    for (const exp of expectedLabels) {
+      const match = arnoldCalls.find((c) => c.text === exp.text);
+      if (!match) continue;
+      const expectedX = sx(exp.val);
+      const xOk = Math.abs(match.x - expectedX) < 1e-3;
+      const yOk = match.y === pad.t - 4 && match.textBaseline === "bottom" && match.textAlign === "center";
+      const fontOk = match.font.includes(primaryFamily);
+      fullLabels.push({
+        text: exp.text,
+        x: match.x,
+        expectedX,
+        xOk,
+        y: match.y,
+        yOk,
+        font: match.font,
+        fontOk,
+      });
+    }
+
+    // Zoom domain to [0.2, 0.8]
+    window.__topCalls = [];
+    plot.setDomain({ x0: 0.2, x1: 0.8, y0: 0, y1: 0.3 });
+    const zoomedCalls = (window.__topCalls || []).filter((c) => c.figId === "fig:arnold_tongues");
+    const domZ = plot.getDomain();
+    const sxZ = (v) => pad.l + (v - domZ.x0) / (domZ.x1 - domZ.x0) * (W - pad.l - pad.r);
+
+    const zoomedTexts = zoomedCalls.map((c) => c.text);
+    const outsideNotDrawn = !zoomedTexts.includes("0/1") && !zoomedTexts.includes("1/1");
+    const insideDrawn = ["1/3", "1/2", "2/3"].every((t) => zoomedTexts.includes(t));
+
+    const trackedPositions = [];
+    for (const exp of [{ text: "1/3", val: 1 / 3 }, { text: "1/2", val: 0.5 }, { text: "2/3", val: 2 / 3 }]) {
+      const match = zoomedCalls.find((c) => c.text === exp.text);
+      if (match) {
+        const expectedX = sxZ(exp.val);
+        trackedPositions.push({ text: exp.text, x: match.x, expectedX, ok: Math.abs(match.x - expectedX) < 1e-3 });
+      }
+    }
+
+    plot.reset();
+    CanvasRenderingContext2D.prototype.fillText = origFill;
+
+    return {
+      padGrew,
+      pad,
+      otherPads,
+      otherHasTopLabels,
+      fullCount: fullLabels.length,
+      fullLabels,
+      outsideNotDrawn,
+      insideDrawn,
+      trackedPositions,
+      ok: padGrew &&
+        !otherHasTopLabels &&
+        fullLabels.length === 5 &&
+        fullLabels.every((l) => l.xOk && l.yOk && l.fontOk) &&
+        outsideNotDrawn &&
+        insideDrawn &&
+        trackedPositions.length === 3 &&
+        trackedPositions.every((p) => p.ok),
+    };
+  })()`);
+  check(
+    "the Arnold canvas draws top fraction labels tracking the x domain in tick typography inside canvas",
+    Boolean(arnoldTopLabelsCheck && arnoldTopLabelsCheck.ok),
+    JSON.stringify(arnoldTopLabelsCheck),
+  );
   // Restore default viewport
   await send("Emulation.setDeviceMetricsOverride", {
     width: 1400,
