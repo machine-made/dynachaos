@@ -2856,7 +2856,6 @@ document.querySelectorAll("figure").forEach(fig=>{
           const mounted=fig.dataset.state==="live"?Promise.resolve():mountInteractive(fig);
           mounted.then(()=>{
             if(fig._live&&fig._live.setParams) fig._live.setParams(values);
-            requestAnimationFrame(()=>fig.scrollIntoView({block:"start",behavior:"instant"}));
           });
         })
       ).catch(()=>{});
@@ -3588,6 +3587,7 @@ document.querySelectorAll("figure").forEach(fig=>{
 })();
 
 /* ---------------- cross-references into folded back matter ---------------- */
+let revealGen=0,activeCleanup=null;
 function revealTarget(){
   const clean=decodeURIComponent((location.hash||"").replace(/^#/,""));
   if(!clean) return;
@@ -3608,12 +3608,60 @@ function revealTarget(){
     if(first) el=document.getElementById(first);
   }
   if(!el) return;
+  if(activeCleanup){activeCleanup();activeCleanup=null;}
   let d=el.closest("details");
   while(d){d.open=true;d=d.parentElement&&d.parentElement.closest("details");}
-  requestAnimationFrame(()=>el.scrollIntoView({block:"start",behavior:"instant"}));
+  let p=el;
+  while(p&&p!==document.body){
+    if(p.classList&&p.classList.contains("reveal")){p.classList.add("in");p.style.transition="none";}
+    p=p.parentElement;
+  }
+  if(el.classList){el.classList.add("seen");el.style.transition="none";}
+  const gen=++revealGen;
+  let userInteracted=false;
+  const cancel=()=>{userInteracted=true;cleanup();};
+  const cleanup=()=>{
+    removeEventListener("wheel",cancel);
+    removeEventListener("touchstart",cancel);
+    removeEventListener("keydown",cancel);
+    removeEventListener("pointerdown",cancel);
+    if(activeCleanup===cleanup) activeCleanup=null;
+  };
+  activeCleanup=cleanup;
+  addEventListener("wheel",cancel,{passive:true});
+  addEventListener("touchstart",cancel,{passive:true});
+  addEventListener("keydown",cancel,{passive:true});
+  addEventListener("pointerdown",cancel,{passive:true});
+  const deadline=performance.now()+3500;
+  let lastTop=null,stable=0;
+  function step(){
+    if(userInteracted||gen!==revealGen){cleanup();return;}
+    const curTop=el.getBoundingClientRect().top+scrollY;
+    let realigned=false;
+    if(lastTop===null||Math.abs(curTop-lastTop)>0.5){
+      el.scrollIntoView({block:"start",behavior:"instant"});
+      realigned=true;
+    }
+    const settledTop=el.getBoundingClientRect().top+scrollY;
+    if(!realigned&&lastTop!==null&&Math.abs(settledTop-lastTop)<0.5){
+      stable++;
+    }else{
+      stable=0;
+    }
+    lastTop=settledTop;
+    if(performance.now()<deadline&&stable<6){
+      setTimeout(()=>requestAnimationFrame(step),80);
+    }else{
+      cleanup();
+    }
+  }
+  requestAnimationFrame(step);
 }
 addEventListener("hashchange",revealTarget);
-if(location.hash) addEventListener("load",revealTarget);
+if(location.hash){
+  if(document.readyState==="complete") revealTarget();
+  else addEventListener("load",revealTarget);
+}
 document.addEventListener("click",e=>{
   const a=e.target.closest&&e.target.closest('a[href^="#"]');
   if(!a) return;

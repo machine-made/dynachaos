@@ -2086,32 +2086,47 @@ try {
   await waitFor(`!!(${S} && ${S}.querySelector(".live-link-note"))`, FIGURE_MS);
   await waitFor(`!!(${S} && ${S}._live)`, FIRST_PAINT_MS);
 
-  const shared1440 = await ev(`(() => {
-    const fig = ${S};
-    if (!fig) return null;
-    const ctrl = document.querySelector(".controls");
-    const cr = ctrl ? ctrl.getBoundingClientRect() : null;
-    const r = fig.getBoundingClientRect();
-    const note = fig.querySelector(".live-link-note");
-    const noteText = note ? note.textContent.trim() : "";
-    const inView = Boolean(cr && r.top >= cr.bottom && r.top < window.innerHeight);
-    return {
-      inView,
-      top: r.top,
-      controlsBottom: cr ? cr.bottom : null,
-      noteText,
-      hasButton: Boolean(note && note.querySelector("button")),
-    };
-  })()`);
+  const measureShared = (figExpr) =>
+    ev(`(() => {
+      const fig = ${figExpr};
+      if (!fig) return null;
+      const ctrl = document.querySelector(".controls");
+      const cr = ctrl ? ctrl.getBoundingClientRect() : null;
+      const r = fig.getBoundingClientRect();
+      const note = fig.querySelector(".live-link-note");
+      const noteText = note ? note.textContent.trim() : "";
+      const inView = Boolean(cr && r.top >= cr.bottom && r.top < window.innerHeight);
+      return {
+        inView,
+        top: r.top,
+        controlsBottom: cr ? cr.bottom : null,
+        noteText,
+        hasButton: Boolean(note && note.querySelector("button")),
+      };
+    })()`);
+
+  await sleep(300);
+  const shared1440_03 = await measureShared(S);
+  await sleep(700);
+  const shared1440_10 = await measureShared(S);
+  await sleep(2000);
+  const shared1440_30 = await measureShared(S);
+  const settled1440 = Boolean(
+    shared1440_03 &&
+      shared1440_03.inView &&
+      shared1440_10 &&
+      shared1440_10.inView &&
+      shared1440_30 &&
+      shared1440_30.inView,
+  );
   check(
     "at 1440x900 a shared link scrolls the figure into view and shows the opened note",
     Boolean(
-      shared1440 &&
-        shared1440.inView &&
-        shared1440.hasButton &&
-        shared1440.noteText.includes("Opened with D = 0.4 from the link"),
+      settled1440 &&
+        shared1440_30.hasButton &&
+        shared1440_30.noteText.includes("Opened with D = 0.4 from the link"),
     ),
-    JSON.stringify(shared1440),
+    JSON.stringify({ t03: shared1440_03, t10: shared1440_10, t30: shared1440_30 }),
   );
 
   // Reset at 1440x900 returns to default
@@ -2133,6 +2148,36 @@ try {
     JSON.stringify(reset1440),
   );
 
+  // 3b. Shared link: reader scroll during layout settle is not fought
+  const targetScroll = 300;
+  const scrollRuns = [];
+  for (let r = 0; r < 3; r++) {
+    await send("Page.navigate", { url: "about:blank" });
+    await send("Page.navigate", {
+      url: `http://127.0.0.1:${httpPort}/index.html#fig:devils_staircase.D=0.4`,
+    });
+    await waitFor("document.readyState === 'complete'", PAGE_READY_MS);
+    await sleep(150);
+    await ev(`window.scrollTo({top: ${targetScroll}, behavior: "instant"})`);
+    await sleep(350);
+    const y05 = await ev("window.scrollY");
+    await sleep(1500);
+    const y20 = await ev("window.scrollY");
+    scrollRuns.push({
+      run: r + 1,
+      y05,
+      y20,
+      ok05: Math.abs(y05 - targetScroll) <= 2,
+      ok20: Math.abs(y20 - targetScroll) <= 2,
+    });
+  }
+  const scrollHeld = scrollRuns.every((s) => s.ok05 && s.ok20);
+  check(
+    "a reader scroll during layout settle is not fought and scrollY stays within 2 px of 300 at 0.5 s and 2 s",
+    scrollHeld,
+    JSON.stringify(scrollRuns),
+  );
+
   // 4. Shared link: 390x844 phone viewport
   await send("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -2148,32 +2193,28 @@ try {
   await waitFor(`!!${S}`, FIGURE_MS);
   await waitFor(`!!(${S} && ${S}.querySelector(".live-link-note"))`, FIGURE_MS);
 
-  const shared390 = await ev(`(() => {
-    const fig = ${S};
-    if (!fig) return null;
-    const ctrl = document.querySelector(".controls");
-    const cr = ctrl ? ctrl.getBoundingClientRect() : null;
-    const r = fig.getBoundingClientRect();
-    const note = fig.querySelector(".live-link-note");
-    const noteText = note ? note.textContent.trim() : "";
-    const inView = Boolean(cr && r.top >= cr.bottom && r.top < window.innerHeight);
-    return {
-      inView,
-      top: r.top,
-      controlsBottom: cr ? cr.bottom : null,
-      noteText,
-      hasButton: Boolean(note && note.querySelector("button")),
-    };
-  })()`);
+  await sleep(300);
+  const shared390_03 = await measureShared(S);
+  await sleep(700);
+  const shared390_10 = await measureShared(S);
+  await sleep(2000);
+  const shared390_30 = await measureShared(S);
+  const settled390 = Boolean(
+    shared390_03 &&
+      shared390_03.inView &&
+      shared390_10 &&
+      shared390_10.inView &&
+      shared390_30 &&
+      shared390_30.inView,
+  );
   check(
     "at 390x844 a shared link scrolls the figure into view and shows the opened note",
     Boolean(
-      shared390 &&
-        shared390.inView &&
-        shared390.hasButton &&
-        shared390.noteText.includes("Opened with D = 0.4 from the link"),
+      settled390 &&
+        shared390_30.hasButton &&
+        shared390_30.noteText.includes("Opened with D = 0.4 from the link"),
     ),
-    JSON.stringify(shared390),
+    JSON.stringify({ t03: shared390_03, t10: shared390_10, t30: shared390_30 }),
   );
 
   // Reset at 390x844 returns to default
