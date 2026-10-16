@@ -1402,11 +1402,12 @@ try {
       text: note ? note.textContent.trim() : "",
       btnCount,
       hasThreePresets: note ? /three presets/i.test(note.textContent) : false,
+      hasJumpPhrase: note ? /jump to the zoom panels' windows and the full D range/i.test(note.textContent) : false,
     };
   })()`);
   check(
     "the double staircase note says three presets matching the preset button count",
-    Boolean(dsNote && dsNote.btnCount === 3 && dsNote.hasThreePresets),
+    Boolean(dsNote && dsNote.btnCount === 3 && dsNote.hasThreePresets && dsNote.hasJumpPhrase),
     JSON.stringify(dsNote),
   );
 
@@ -1715,6 +1716,14 @@ try {
   // and asserts that no drawn string contains _c or ^n, and that the runs
   // "K", "c", "1/(2π)" (and x, i, n for the colour bar) were drawn.
   await ev(`(() => {
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.reset) p.reset();
+      }
+    }
+  })()`);
+
+  await ev(`(() => {
     window.__canvasTextCalls = [];
     const orig = CanvasRenderingContext2D.prototype.fillText;
     CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
@@ -1726,6 +1735,7 @@ try {
         for (const p of fig._plots) if (p.redraw) p.redraw();
       }
     }
+    CanvasRenderingContext2D.prototype.fillText = orig;
   })()`);
   const canvasTextReport = await ev(`(() => {
     const texts = window.__canvasTextCalls || [];
@@ -1755,6 +1765,383 @@ try {
     Boolean(canvasTextReport && canvasTextReport.ok),
     JSON.stringify(canvasTextReport),
   );
+
+  // Item 1: every tick number drawn on a live canvas uses the font family of the axis labels
+  const tickFontReport = await ev(`(() => {
+    window.__canvasFontCalls = [];
+    const orig = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig) {
+        window.__canvasFontCalls.push({
+          figId: fig.id,
+          text: String(text),
+          font: this.font,
+          textAlign: this.textAlign,
+          textBaseline: this.textBaseline,
+        });
+      }
+      return orig.apply(this, arguments);
+    };
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.redraw) p.redraw();
+      }
+    }
+    CanvasRenderingContext2D.prototype.fillText = orig;
+    const calls = window.__canvasFontCalls || [];
+    const cs = getComputedStyle(document.documentElement);
+    const serifToken = cs.getPropertyValue("--serif").trim();
+    const primaryFamily = serifToken.split(",")[0].replace(/['"]/g, "").trim();
+
+    const tickCalls = calls.filter((c) => /^-?\\d+(\\.\\d+)?(e[+-]\\d+)?$/.test(c.text));
+    const badTicks = tickCalls.filter((c) => !c.font.toLowerCase().includes(primaryFamily.toLowerCase()));
+    return {
+      totalTicks: tickCalls.length,
+      badTicksCount: badTicks.length,
+      badTicks: badTicks.slice(0, 3),
+      primaryFamily,
+      sampleTickFont: tickCalls[0] ? tickCalls[0].font : null,
+      ok: tickCalls.length > 0 && badTicks.length === 0,
+    };
+  })()`);
+  check(
+    "every tick number drawn on a live canvas uses the font family of the axis labels",
+    Boolean(tickFontReport && tickFontReport.ok),
+    JSON.stringify(tickFontReport),
+  );
+
+  // Item 3: stroke and label colour of critical-line marks equal --vermilion in light and dark
+  const marksColorReport = await ev(`(() => {
+    window.__markStrokeCalls = [];
+    window.__markTextCalls = [];
+    const origStroke = CanvasRenderingContext2D.prototype.stroke;
+    const origFill = CanvasRenderingContext2D.prototype.fillText;
+
+    CanvasRenderingContext2D.prototype.stroke = function() {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig) {
+        window.__markStrokeCalls.push({
+          figId: fig.id,
+          strokeStyle: this.strokeStyle,
+          lineDash: this.getLineDash(),
+        });
+      }
+      return origStroke.apply(this, arguments);
+    };
+
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig && (text === "K" || text === "c" || String(text).includes("1/(2"))) {
+        window.__markTextCalls.push({
+          figId: fig.id,
+          text: String(text),
+          fillStyle: this.fillStyle,
+        });
+      }
+      return origFill.apply(this, arguments);
+    };
+
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.redraw) p.redraw();
+      }
+    }
+
+    const cs = getComputedStyle(document.documentElement);
+    const vermilionToken = cs.getPropertyValue("--vermilion").trim();
+    const dummy = document.createElement("canvas").getContext("2d");
+    dummy.strokeStyle = vermilionToken;
+    const expectedVermilion = dummy.strokeStyle;
+
+    const criticalFigs = ["fig:arnold_tongues", "fig:devils_staircase"];
+    const strokes = (window.__markStrokeCalls || []).filter((c) => criticalFigs.includes(c.figId) && c.lineDash.length === 2 && c.lineDash[0] === 5 && c.lineDash[1] === 4);
+    const labels = (window.__markTextCalls || []).filter((c) => criticalFigs.includes(c.figId));
+
+    const strokesOk = strokes.length > 0 && strokes.every((s) => s.strokeStyle === expectedVermilion);
+    const labelsOk = labels.length > 0 && labels.every((l) => l.fillStyle === expectedVermilion);
+
+    return {
+      expectedVermilion,
+      strokes: strokes.map((s) => ({ figId: s.figId, strokeStyle: s.strokeStyle })),
+      labels: labels.map((l) => ({ figId: l.figId, text: l.text, fillStyle: l.fillStyle })),
+      strokesOk,
+      labelsOk,
+      ok: strokesOk && labelsOk,
+    };
+  })()`);
+  check(
+    "the stroke and label colour of each critical-line mark equals computed --vermilion in light theme",
+    Boolean(marksColorReport && marksColorReport.ok),
+    JSON.stringify(marksColorReport),
+  );
+
+  await send("Emulation.setEmulatedMedia", {
+    media: "screen",
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  const darkMarksReport = await ev(`(() => {
+    const strokeCalls = [];
+    const textCalls = [];
+    const origStroke = CanvasRenderingContext2D.prototype.stroke;
+    const origFill = CanvasRenderingContext2D.prototype.fillText;
+
+    CanvasRenderingContext2D.prototype.stroke = function() {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig) {
+        strokeCalls.push({
+          figId: fig.id,
+          strokeStyle: this.strokeStyle,
+          lineDash: this.getLineDash(),
+        });
+      }
+      return origStroke.apply(this, arguments);
+    };
+
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig && (text === "K" || text === "c" || String(text).includes("1/(2"))) {
+        textCalls.push({
+          figId: fig.id,
+          text: String(text),
+          fillStyle: this.fillStyle,
+        });
+      }
+      return origFill.apply(this, arguments);
+    };
+
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.redraw) p.redraw();
+      }
+    }
+    CanvasRenderingContext2D.prototype.stroke = origStroke;
+    CanvasRenderingContext2D.prototype.fillText = origFill;
+
+    const cs = getComputedStyle(document.documentElement);
+    const vermilionToken = cs.getPropertyValue("--vermilion").trim();
+    const dummy = document.createElement("canvas").getContext("2d");
+    dummy.strokeStyle = vermilionToken;
+    const expectedVermilion = dummy.strokeStyle;
+
+    const criticalFigs = ["fig:arnold_tongues", "fig:devils_staircase"];
+    const strokes = strokeCalls.filter((c) => criticalFigs.includes(c.figId) && c.lineDash.length === 2 && c.lineDash[0] === 5 && c.lineDash[1] === 4);
+    const labels = textCalls.filter((c) => criticalFigs.includes(c.figId));
+
+    const strokesOk = strokes.length > 0 && strokes.every((s) => s.strokeStyle === expectedVermilion);
+    const labelsOk = labels.length > 0 && labels.every((l) => l.fillStyle === expectedVermilion);
+    return {
+      expectedVermilion,
+      strokes: strokes.map((s) => ({ figId: s.figId, strokeStyle: s.strokeStyle })),
+      labels: labels.map((l) => ({ figId: l.figId, text: l.text, fillStyle: l.fillStyle })),
+      strokesOk,
+      labelsOk,
+      ok: strokesOk && labelsOk,
+    };
+  })()`);
+  await send("Emulation.setEmulatedMedia", {
+    media: "screen",
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  check(
+    "the stroke and label colour of each critical-line mark equals computed --vermilion in dark theme",
+    Boolean(darkMarksReport && darkMarksReport.ok),
+    JSON.stringify(darkMarksReport),
+  );
+
+  // Item 4: Arnold tick text decimals at most published image and no ambiguity across live figures
+  const tickDecimalsReport = await ev(`(() => {
+    const calls = [];
+    const origFill = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+      const fig = this.canvas ? this.canvas.closest("figure[data-live]") : null;
+      if (fig) {
+        calls.push({
+          figId: fig.id,
+          text: String(text),
+          textAlign: this.textAlign,
+          textBaseline: this.textBaseline,
+        });
+      }
+      return origFill.apply(this, arguments);
+    };
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.redraw) p.redraw();
+      }
+    }
+    CanvasRenderingContext2D.prototype.fillText = origFill;
+
+    const arnoldCalls = calls.filter((c) => c.figId === "fig:arnold_tongues");
+    const arnoldXTicks = arnoldCalls.filter((c) => c.textAlign === "center" && c.textBaseline === "top" && /^-?\\d+(\\.\\d+)?$/.test(c.text)).map((c) => c.text);
+    const arnoldYTicks = arnoldCalls.filter((c) => c.textAlign === "right" && c.textBaseline === "middle" && /^-?\\d+(\\.\\d+)?$/.test(c.text)).map((c) => c.text);
+
+    const getDecimals = (s) => {
+      const dot = s.indexOf(".");
+      return dot === -1 ? 0 : s.length - dot - 1;
+    };
+
+    const xMaxDecimals = arnoldXTicks.length ? Math.max(...arnoldXTicks.map(getDecimals)) : null;
+    const yMaxDecimals = arnoldYTicks.length ? Math.max(...arnoldYTicks.map(getDecimals)) : null;
+
+    const figs = Array.from(new Set(calls.map((c) => c.figId)));
+    const ambiguousAxes = [];
+    for (const fid of figs) {
+      const fc = calls.filter((c) => c.figId === fid);
+      const xt = fc.filter((c) => c.textAlign === "center" && c.textBaseline === "top" && /^-?\\d+(\\.\\d+)?$/.test(c.text)).map((c) => c.text);
+      if (new Set(xt).size !== xt.length) ambiguousAxes.push({ figId: fid, axis: "x", ticks: xt });
+      const yt = fc.filter((c) => c.textAlign === "right" && c.textBaseline === "middle" && /^-?\\d+(\\.\\d+)?$/.test(c.text)).map((c) => c.text);
+      if (new Set(yt).size !== yt.length) ambiguousAxes.push({ figId: fid, axis: "y", ticks: yt });
+    }
+
+    return {
+      arnoldXTicks,
+      arnoldYTicks,
+      xMaxDecimals,
+      yMaxDecimals,
+      ambiguousAxes,
+      ok: arnoldXTicks.length > 0 && arnoldYTicks.length > 0 && xMaxDecimals <= 1 && yMaxDecimals <= 2 && ambiguousAxes.length === 0,
+    };
+  })()`);
+  check(
+    "the Arnold tick text has at most the decimals of the published image and no tick text is ambiguous",
+    Boolean(tickDecimalsReport && tickDecimalsReport.ok),
+    JSON.stringify(tickDecimalsReport),
+  );
+
+  // Item 2: rotated y label does not intersect y ticks and x ticks inside canvas width at 1440x900 and 390x844
+  async function measureBoxesAtViewport(w, h) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: w,
+      height: h,
+      deviceScaleFactor: 1,
+      mobile: w < 600,
+    });
+    await sleep(400);
+    await ev(`(() => {
+      for (const fig of document.querySelectorAll("figure[data-live]")) {
+        if (fig._plots) {
+          for (const p of fig._plots) if (p.resize) p.resize();
+        }
+      }
+    })()`);
+    await sleep(400);
+
+    return await ev(`(() => {
+      window.__boxCalls = [];
+      const origFill = CanvasRenderingContext2D.prototype.fillText;
+      const origMeasure = CanvasRenderingContext2D.prototype.measureText;
+
+      CanvasRenderingContext2D.prototype.fillText = function(text, x, y, maxWidth) {
+        const transform = this.getTransform();
+        const m = origMeasure.call(this, text);
+        let lx0 = 0, lx1 = m.width;
+        if (this.textAlign === "center") { lx0 = -m.width / 2; lx1 = m.width / 2; }
+        else if (this.textAlign === "right") { lx0 = -m.width; lx1 = 0; }
+        const ascent = m.actualBoundingBoxAscent || 8;
+        const descent = m.actualBoundingBoxDescent || 2;
+        let ly0 = -ascent, ly1 = descent;
+        if (this.textBaseline === "top") { ly0 = 0; ly1 = ascent + descent; }
+        else if (this.textBaseline === "middle") { ly0 = -(ascent + descent) / 2; ly1 = (ascent + descent) / 2; }
+        else if (this.textBaseline === "bottom") { ly0 = -(ascent + descent); ly1 = 0; }
+
+        const pt = (px, py) => {
+          const nx = x + px, ny = y + py;
+          return {
+            x: transform.a * nx + transform.c * ny + transform.e,
+            y: transform.b * nx + transform.d * ny + transform.f,
+          };
+        };
+        const c1 = pt(lx0, ly0), c2 = pt(lx1, ly0), c3 = pt(lx1, ly1), c4 = pt(lx0, ly1);
+        const minX = Math.min(c1.x, c2.x, c3.x, c4.x), maxX = Math.max(c1.x, c2.x, c3.x, c4.x);
+        const minY = Math.min(c1.y, c2.y, c3.y, c4.y), maxY = Math.max(c1.y, c2.y, c3.y, c4.y);
+
+        const canvas = this.canvas;
+        const fig = canvas ? canvas.closest("figure[data-live]") : null;
+        if (fig) {
+          window.__boxCalls.push({
+            figId: fig.id,
+            text: String(text),
+            x, y,
+            textAlign: this.textAlign,
+            textBaseline: this.textBaseline,
+            box: { minX, maxX, minY, maxY },
+            canvasClientWidth: canvas.clientWidth,
+          });
+        }
+        return origFill.apply(this, arguments);
+      };
+
+      for (const fig of document.querySelectorAll("figure[data-live]")) {
+        if (fig._plots) {
+          for (const p of fig._plots) if (p.redraw) p.redraw();
+        }
+      }
+
+      const calls = window.__boxCalls || [];
+      const figs = Array.from(new Set(calls.map((c) => c.figId)));
+      const overlaps = [];
+      const clippedTicks = [];
+
+      for (const fid of figs) {
+        const fc = calls.filter((c) => c.figId === fid);
+        const yLabel = fc.find((c) => c.x === 0 && c.y === 0 && c.textBaseline === "top");
+        const yTicks = fc.filter((c) => c.textAlign === "right" && c.textBaseline === "middle" && /^-?\\d+(\\.\\d+)?$/.test(c.text));
+        if (yLabel && yTicks.length) {
+          for (const yt of yTicks) {
+            const intersects = !(yLabel.box.maxX < yt.box.minX || yLabel.box.minX > yt.box.maxX ||
+                                 yLabel.box.maxY < yt.box.minY || yLabel.box.minY > yt.box.maxY);
+            if (intersects) overlaps.push({ figId: fid, label: yLabel.text, tick: yt.text, yLabelBox: yLabel.box, tickBox: yt.box });
+          }
+        }
+        const xTicks = fc.filter((c) => c.textAlign === "center" && c.textBaseline === "top" && /^-?\\d+(\\.\\d+)?$/.test(c.text));
+        for (const xt of xTicks) {
+          const cw = xt.canvasClientWidth;
+          if (xt.box.minX < 0 || xt.box.maxX > cw) {
+            clippedTicks.push({ figId: fid, tick: xt.text, box: xt.box, canvasClientWidth: cw });
+          }
+        }
+      }
+
+      return {
+        figsCount: figs.length,
+        overlaps,
+        clippedTicks,
+        ok: figs.length >= 6 && overlaps.length === 0 && clippedTicks.length === 0,
+      };
+    })()`);
+  }
+
+  const boxes1440 = await measureBoxesAtViewport(1440, 900);
+  check(
+    "at 1440x900 rotated y labels do not intersect y ticks and x ticks lie inside canvas width",
+    Boolean(boxes1440 && boxes1440.ok),
+    JSON.stringify(boxes1440),
+  );
+
+  const boxes390 = await measureBoxesAtViewport(390, 844);
+  check(
+    "at 390x844 rotated y labels do not intersect y ticks and x ticks lie inside canvas width",
+    Boolean(boxes390 && boxes390.ok),
+    JSON.stringify(boxes390),
+  );
+
+  // Restore default viewport
+  await send("Emulation.setDeviceMetricsOverride", {
+    width: 1400,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await sleep(300);
+  await ev(`(() => {
+    for (const fig of document.querySelectorAll("figure[data-live]")) {
+      if (fig._plots) {
+        for (const p of fig._plots) if (p.resize) p.resize();
+      }
+    }
+  })()`);
+  await sleep(300);
 
   // A shared link that still carries the old slider's D range: the hash
   // parse clamps 3 to the max, the figure mounts live on the link, and the

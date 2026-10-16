@@ -52,6 +52,9 @@ import {
   isLongTaskSupported,
   median,
   shortUserAgent,
+  tickStep,
+  fmtSpan,
+  parseRichText,
 } from "../../site-src/live/live-figure.js";
 import {
   HEADER,
@@ -2079,4 +2082,59 @@ test("buildHint with play returns a play-specific short hint under 80 characters
   assert.equal(hint.shortText, LIVE_HINT_SHORT_PLAY);
   assert.equal(hint.fullText, LIVE_HINT_FULL_PLAY);
   assert.ok(hint.fullText.includes("play appends new rows and drops the oldest"));
+});
+
+test("tickStep computes step sizes for 1-2-5 intervals", () => {
+  assert.equal(tickStep(1, 5), 0.2);
+  assert.equal(tickStep(0.3, 4), 0.1);
+  assert.equal(tickStep(0.25, 5), 0.05);
+  assert.equal(tickStep(200, 5), 50);
+  assert.equal(tickStep(500, 4), 100);
+});
+
+test("fmtSpan formats ticks with at most the needed decimals and never produces ambiguous ticks", () => {
+  // Arnold y: span 0.3, step 0.1 -> 1 decimal
+  assert.equal(fmtSpan(0.0, 0.3, 4), "0.0");
+  assert.equal(fmtSpan(0.1, 0.3, 4), "0.1");
+  assert.equal(fmtSpan(0.2, 0.3, 4), "0.2");
+  assert.equal(fmtSpan(0.3, 0.3, 4), "0.3");
+
+  // Arnold x: span 1.0, step 0.2 -> 1 decimal
+  assert.equal(fmtSpan(0.0, 1.0, 5), "0.0");
+  assert.equal(fmtSpan(0.2, 1.0, 5), "0.2");
+  assert.equal(fmtSpan(1.0, 1.0, 5), "1.0");
+
+  // Staircase x: span 0.25, step 0.05 -> 2 decimals
+  assert.equal(fmtSpan(0.0, 0.25, 5), "0.00");
+  assert.equal(fmtSpan(0.05, 0.25, 5), "0.05");
+  assert.equal(fmtSpan(0.25, 0.25, 5), "0.25");
+
+  // Check no ambiguity across consecutive steps
+  const steps = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25];
+  const formatted = steps.map((t) => fmtSpan(t, 0.25, 5));
+  assert.equal(new Set(formatted).size, steps.length);
+});
+
+test("parseRichText parses x_i^n and K_c labels without 1/2π spellings", () => {
+  assert.deepEqual(parseRichText("x_i^n"), [
+    { text: "x", type: "normal" },
+    { text: "i", type: "sub" },
+    { text: "n", type: "super" },
+  ]);
+  assert.deepEqual(parseRichText("K_c = 1/(2π)"), [
+    { text: "K", type: "normal" },
+    { text: "c", type: "sub" },
+    { text: " = ", type: "normal" },
+    { text: "1/(2π)", type: "normal" },
+  ]);
+  assert.deepEqual(parseRichText("K_c = 1/(2\u03c0)"), [
+    { text: "K", type: "normal" },
+    { text: "c", type: "sub" },
+    { text: " = ", type: "normal" },
+    { text: "1/(2\u03c0)", type: "normal" },
+  ]);
+  // Unparenthesized 1/2π is not converted to 1/(2π)
+  const unparenthesized = parseRichText("K_c = 1/2π");
+  assert.equal(unparenthesized[3].text, "1/2π");
+  assert.equal(parseRichText("plain text"), null);
 });

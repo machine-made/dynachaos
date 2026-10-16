@@ -103,6 +103,14 @@ reconstructed from git history. 0.4.0 is the first public release.
 
 ### Changed
 
+- Live canvas tick numbers use the same serif typeface as the axis labels, and padding reserves
+  room measured against the drawn face. Rotated vertical axis labels no longer intersect tick
+  numbers, and horizontal tick numbers remain inside the canvas width at both desktop and mobile
+  sizes. Critical-line marks and their text labels follow the site's vermilion accent in light
+  and dark schemes. Arnold-tongue tick numbers show no more decimal places than the published
+  figure without creating ambiguous tick labels, and the double devil's staircase note clarifies
+  that presets jump to the zoom panels' windows and the full frequency range.
+
 - Live figures use the quantities and symbols from the paper captions across visible labels, plot
   titles, and readouts, naming the devil's staircase sweep by nonlinearity K at drive frequency Ω.
   Parameter sliders display readable names instead of internal keys, the double-staircase note

@@ -960,17 +960,28 @@ function hero(){
 /* ---------------- canvas plotting ---------------- */
 // Tick text is formatted against the axis *span*, not the value: an axis
 // running 1.4..2.5 wants one decimal, not the four that "1.4000" wasted.
-function fmtSpan(v,span){
+function tickStep(span,n=4){
+  const raw=(Math.abs(span)||1)/n,mag=Math.pow(10,Math.floor(Math.log10(raw))),nm=raw/mag;
+  return (nm<1.5?1:nm<3?2:nm<7?5:10)*mag;
+}
+function fmtSpan(v,span,n=4){
   const a=Math.abs(v);
   if((a!==0&&(a<1e-3||a>=1e5))||(span&&span<1e-3))return v.toExponential(2);
-  const d=span?Math.max(0,Math.min(6,1-Math.floor(Math.log10(span/4)))):3;
+  const st=span?tickStep(span,n):1;
+  const d=span?Math.max(0,Math.min(6,-Math.floor(Math.log10(st)+1e-9))):3;
   const s=v.toFixed(d);
   return s==="-0"?"0":s;
 }
-function fmt(v){return fmtSpan(v,Math.abs(v)||1);}
+function fmt(v){
+  const a=Math.abs(v);
+  if(a!==0&&(a<1e-3||a>=1e5))return v.toExponential(2);
+  const s=a||1;
+  const d=Math.max(0,Math.min(6,1-Math.floor(Math.log10(s/4))));
+  const str=v.toFixed(d);
+  return str==="-0"?"0":str;
+}
 function ticks(lo,hi,n){
-  const raw=(hi-lo||1)/n,mag=Math.pow(10,Math.floor(Math.log10(raw))),nm=raw/mag;
-  const st=(nm<1.5?1:nm<3?2:nm<7?5:10)*mag,out=[];
+  const st=tickStep(hi-lo,n),out=[];
   for(let t=Math.ceil(lo/st)*st;t<=hi+1e-9;t+=st) out.push(t);
   return out;}
 const PAL=["--chaotic","--locked","--torus"];
@@ -996,7 +1007,7 @@ function parseRichText(str){
   }
   const km=str.match(/^K_c\s*=\s*(.*)$/);
   if(km){
-    const frac=(km[1]==="1/2\u03c0"||km[1]==="1/(2\u03c0)"||km[1]==="1/2π"||km[1]==="1/(2π)")?"1/(2\u03c0)":km[1];
+    const frac=(km[1]==="1/(2\u03c0)"||km[1]==="1/(2π)")?"1/(2\u03c0)":km[1];
     return [
       {text:"K",type:"normal"},
       {text:"c",type:"sub"},
@@ -1183,16 +1194,22 @@ function Plot(canvas,panel,meta){
   // Reserve exactly the room the tick text needs, so the rotated axis label
   // stops landing on top of it.
   function measurePads(){
-    ctx.font="10px "+css("--mono");
+    ctx.font="10px "+css("--serif");
     let w=0;
-    const yspan=dom.y1-dom.y0;
-    for(const t of ticks(dom.y0,dom.y1,4)) w=Math.max(w,ctx.measureText(fmtSpan(t,yspan)).width);
-    pad.l=Math.ceil(w)+(meta.ylabel?26:12);
+    const yspan=dom.y1-dom.y0,xspan=dom.x1-dom.x0;
+    for(const t of ticks(dom.y0,dom.y1,4)) w=Math.max(w,ctx.measureText(fmtSpan(t,yspan,4)).width);
+    pad.l=Math.ceil(w)+(meta.ylabel?36:12);
     pad.r=12;
     if(heat){
       let zw=0;
-      for(const t of ticks(zlo,zhi,4)) zw=Math.max(zw,ctx.measureText(fmtSpan(t,zhi-zlo)).width);
+      for(const t of ticks(zlo,zhi,4)) zw=Math.max(zw,ctx.measureText(fmtSpan(t,zhi-zlo,4)).width);
       pad.r=12+CBAR+8+Math.ceil(zw)+(zlabel?16:4);
+    }else{
+      const xt=ticks(dom.x0,dom.x1,5);
+      if(xt.length){
+        const lastW=ctx.measureText(fmtSpan(xt[xt.length-1],xspan,5)).width;
+        pad.r=Math.max(14,Math.ceil(lastW/2)+6);
+      }
     }
     // Legend rows need pad.l/pad.r settled first (they bound the available
     // width); pad.t is then sized to whatever the legend actually needs
@@ -1213,12 +1230,13 @@ function Plot(canvas,panel,meta){
     }
     ctx.strokeStyle=css("--rule");ctx.lineWidth=1;
     ctx.strokeRect(x+0.5,y0+0.5,CBAR-1,h-1);
+    ctx.font="10px "+css("--serif");
     ctx.fillStyle=css("--ink-low");ctx.textAlign="left";ctx.textBaseline="middle";
     const zspan=zhi-zlo;
     for(const t of ticks(zlo,zhi,4)){
       if(t<zlo-1e-12||t>zhi+1e-12)continue;
       const y=y1-(t-zlo)/(zspan||1)*h;
-      ctx.fillText(fmtSpan(t,zspan),x+CBAR+5,y);
+      ctx.fillText(fmtSpan(t,zspan,4),x+CBAR+5,y);
     }
     if(zlabel){
       ctx.save();ctx.fillStyle=css("--ink-mid");
@@ -1326,13 +1344,14 @@ function Plot(canvas,panel,meta){
       const vertical=m.axis==="x";
       const p=vertical?sx(m.value):sy(m.value);
       if(vertical?(p<pad.l||p>W-pad.r):(p<pad.t||p>H-pad.b))continue;
-      ctx.strokeStyle=css("--ink-mid");ctx.globalAlpha=.75;
+      const c=css(m.color||(m.label&&m.label.startsWith("K_c")?"--vermilion":"--ink-mid"));
+      ctx.strokeStyle=c;ctx.globalAlpha=.75;
       ctx.beginPath();
       if(vertical){ctx.moveTo(p+0.5,pad.t);ctx.lineTo(p+0.5,H-pad.b);}
       else{ctx.moveTo(pad.l,p+0.5);ctx.lineTo(W-pad.r,p+0.5);}
       ctx.stroke();
       if(m.label){
-        ctx.globalAlpha=1;ctx.fillStyle=css("--ink-mid");
+        ctx.globalAlpha=1;ctx.fillStyle=c;
         const runs=parseRichText(m.label);
         if(runs){
           if(vertical) drawRichText(ctx,runs,p+4,pad.t+11,"left","bottom");
@@ -1352,25 +1371,26 @@ function Plot(canvas,panel,meta){
     measurePads();
     ctx.clearRect(0,0,W,H);
     const rule=css("--rule"),low=css("--ink-low"),mid=css("--ink-mid");
-    ctx.font="10px "+css("--mono");ctx.strokeStyle=rule;ctx.lineWidth=1;ctx.fillStyle=low;
+    ctx.font="10px "+css("--serif");ctx.strokeStyle=rule;ctx.lineWidth=1;ctx.fillStyle=low;
     ctx.textAlign="right";ctx.textBaseline="middle";
     const yspan=dom.y1-dom.y0,xspan=dom.x1-dom.x0;
     for(const t of ticks(dom.y0,dom.y1,4)){
       const y=Math.round(sy(t))+0.5;if(y<pad.t-1||y>H-pad.b+1)continue;
       if(!heat){ctx.globalAlpha=.4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.globalAlpha=1;}
-      ctx.fillText(fmtSpan(t,yspan),pad.l-7,y);
+      ctx.fillText(fmtSpan(t,yspan,4),pad.l-7,y);
     }
     ctx.textAlign="center";ctx.textBaseline="top";
     for(const t of ticks(dom.x0,dom.x1,5)){
       const x=Math.round(sx(t))+0.5;if(x<pad.l-1||x>W-pad.r+1)continue;
       if(!heat){ctx.globalAlpha=.4;ctx.beginPath();ctx.moveTo(x,pad.t);ctx.lineTo(x,H-pad.b);ctx.stroke();ctx.globalAlpha=1;}
-      ctx.fillText(fmtSpan(t,xspan),x,H-pad.b+7);
+      ctx.fillText(fmtSpan(t,xspan,5),x,H-pad.b+7);
     }
     ctx.fillStyle=mid;ctx.textAlign="center";ctx.textBaseline="bottom";
     // meta.labelFont swaps the axis labels' mono for the paper's math
     // italic (the delayed-logistic panels label their axes x and y).
     ctx.save();
     if(meta.labelFont) ctx.font=meta.labelFont;
+    else ctx.font="11px "+css("--serif");
     ctx.fillText(meta.xlabel||"",pad.l+(W-pad.l-pad.r)/2,H-2);
     ctx.translate(11,pad.t+(H-pad.t-pad.b)/2);ctx.rotate(-Math.PI/2);
     ctx.textBaseline="top";ctx.fillText(meta.ylabel||"",0,0);
@@ -1901,7 +1921,7 @@ async function mountLive(fig, opts){
     plot=Plot(c,panel,{
       kind:"heatmap",
       live,
-      marks:[{axis:"y",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)"}],
+      marks:[{axis:"y",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)",color:"--vermilion"}],
       xlabel:"Bare frequency \u03a9",
       ylabel:"Nonlinearity K",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}
@@ -2046,7 +2066,7 @@ async function mountStaircase(fig,body,{poolMod,raster,point,liveFigure,paramsMo
     plot=Plot(c,panel,{
       kind:"line",
       live,
-      marks:[{axis:"x",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)"}],
+      marks:[{axis:"x",value:1/(2*Math.PI),label:"K_c = 1/(2\u03c0)",color:"--vermilion"}],
       xlabel:"Nonlinearity K",
       ylabel:"Rotation number \u03c1",
       onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}
@@ -2376,7 +2396,6 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
-    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose";
     body.insertBefore(note,w.nextSibling);
     let plot=null;
     const writeHash=()=>{
@@ -2423,7 +2442,7 @@ async function mountDoubleStaircase(fig,body,{liveFigure,paramsMod,capText,debug
     const presetCount=presets.querySelectorAll("button").length;
     const numWords=["zero","one","two","three","four","five","six"];
     const countWord=numWords[presetCount]||String(presetCount);
-    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose; the "+countWord+" presets reproduce the zoom panels' windows";
+    note.textContent="the image below is the published figure; the curves above are computed in your browser at the \u03b5 and D window you choose; the "+countWord+" presets jump to the zoom panels' windows and the full D range";
     const trace=df.store.trace;
     const panel={title,traces:[
       {name:"\u03c1\u03b8",x:trace.x,y:trace.y,color:"--slate"},

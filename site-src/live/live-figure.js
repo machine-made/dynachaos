@@ -2045,3 +2045,62 @@ export function buildHint(options = {}) {
     fullText: isPlay ? LIVE_HINT_FULL_PLAY : LIVE_HINT_FULL,
   };
 }
+
+/**
+ * Compute the step between ticks for a given domain span.
+ *
+ * @param {number} span
+ * @param {number} [n=4]
+ * @returns {number}
+ */
+export function tickStep(span, n = 4) {
+  const raw = (Math.abs(span) || 1) / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const nm = raw / mag;
+  return (nm < 1.5 ? 1 : nm < 3 ? 2 : nm < 7 ? 5 : 10) * mag;
+}
+
+/**
+ * Format a tick number against the axis span.
+ *
+ * @param {number} v
+ * @param {number} span
+ * @param {number} [n=4]
+ * @returns {string}
+ */
+export function fmtSpan(v, span, n = 4) {
+  const a = Math.abs(v);
+  if ((a !== 0 && (a < 1e-3 || a >= 1e5)) || (span && span < 1e-3)) return v.toExponential(2);
+  const st = span ? tickStep(span, n) : 1;
+  const d = span ? Math.max(0, Math.min(6, -Math.floor(Math.log10(st) + 1e-9))) : 3;
+  const s = v.toFixed(d);
+  return s === "-0" ? "0" : s;
+}
+
+/**
+ * Parse labels carrying subscript or superscript markup.
+ *
+ * @param {string} str
+ * @returns {Array<{text: string, type: 'normal'|'sub'|'super'}>|null}
+ */
+export function parseRichText(str) {
+  if (typeof str !== "string" || !/[_^]/.test(str)) return null;
+  if (str === "x_i^n") {
+    return [
+      { text: "x", type: "normal" },
+      { text: "i", type: "sub" },
+      { text: "n", type: "super" },
+    ];
+  }
+  const km = str.match(/^K_c\s*=\s*(.*)$/);
+  if (km) {
+    const frac = (km[1] === "1/(2\u03c0)" || km[1] === "1/(2π)") ? "1/(2\u03c0)" : km[1];
+    return [
+      { text: "K", type: "normal" },
+      { text: "c", type: "sub" },
+      { text: " = ", type: "normal" },
+      { text: frac, type: "normal" },
+    ];
+  }
+  return null;
+}
