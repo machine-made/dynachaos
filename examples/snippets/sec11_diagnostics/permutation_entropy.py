@@ -1,4 +1,5 @@
-# Figure: permutation entropy H_PE(a) for the logistic map.
+# Reduced preview (4 a values). Full figure: dynachaos run sec11_diagnostics
+# Permutation entropy H_PE(a) for the logistic map (d=5).
 import numpy as np
 
 from dynachaos.diagnostics.permutation import permutation_entropy
