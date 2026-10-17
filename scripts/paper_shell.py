@@ -190,6 +190,8 @@ pre{background:var(--sunken);border:1px solid var(--rule);border-radius:4px;padd
 @media (prefers-reduced-motion:reduce){.hero-rise{animation:none;opacity:1;transform:none;}}
 .byline{margin:1.6em 0 0;font-size:1rem;color:var(--ink);}
 .byline .affil{display:block;color:var(--ink-low);font-size:0.86rem;margin-top:0.25em;max-width:44ch;}
+.pub-meta{margin:0.5em 0 0;font-family:var(--mono);font-size:0.75rem;color:var(--ink-low);letter-spacing:0.02em;}
+.pub-meta time{font-variant-numeric:tabular-nums;}
 .lede{font-size:clamp(1.06rem,0.9rem+0.62vw,1.4rem);line-height:1.55;color:var(--ink-mid);max-width:48ch;margin-top:1.5em;}
 .hero-links{margin-top:1.2rem;font-size:0.92rem;color:var(--ink-mid);}
 .stats{display:flex;flex-wrap:wrap;gap:2.25rem;margin-top:2.4rem;padding:0;list-style:none;}
@@ -306,6 +308,20 @@ article > section > h2,
 article > section > details > summary > h2{border-top:1px solid var(--rule);padding-top:1.4rem;margin-top:2.8rem;}
 article > section:first-child > h2{margin-top:0;border-top:none;padding-top:0;}
 
+.abstract-box{
+  background:var(--sunken);border:1px solid var(--rule);border-left:3px solid var(--chaotic);
+  border-radius:4px;padding:1.4rem 1.6rem;margin:0 0 2rem;
+}
+.abstract-box h2{font-size:1.05rem;margin:0 0 0.6rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-mid);font-family:var(--sans);}
+.abstract-box p{margin:0;font-size:0.98rem;line-height:1.65;color:var(--ink);}
+
+.how-to-cite-box{
+  background:var(--sunken);border:1px solid var(--rule);border-left:3px solid var(--locked);
+  border-radius:4px;padding:1.4rem 1.6rem;margin:0 0 2.5rem;
+}
+.how-to-cite-box h2{font-size:1.05rem;margin:0 0 0.6rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-mid);font-family:var(--sans);}
+.how-to-cite-box p{margin:0 0 0.6rem;font-size:0.92rem;color:var(--ink-mid);}
+.how-to-cite-box pre{margin:0;background:var(--ground);font-size:0.76rem;}
 /* ------------------------------ figures ------------------------------ */
 figure{margin:2.6rem 0;width:var(--bleed);max-width:calc(100vw - 2*var(--gutter));
   position:relative;left:50%;transform:translateX(-50%);background:var(--raised);border:1px solid var(--rule);border-radius:6px;overflow:hidden;
