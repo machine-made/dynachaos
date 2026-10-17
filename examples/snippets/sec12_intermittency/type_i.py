@@ -1,6 +1,5 @@
-# Figure: Type-I intermittency (tangent bifurcation) -- the logistic map
-# near its period-3 saddle-node onset r_c = 1+sqrt(8) produces long
-# laminar phases separated by chaotic bursts; here we print their lengths.
+# Type-I intermittency: tangent bifurcation and laminar-phase statistics.
+# Full figure: dynachaos run sec12_intermittency
 from dynachaos.diagnostics.intermittency import detect_laminar_phases
 from dynachaos.maps.intermittency import LOGISTIC_TYPE_I_ONSET, logistic_type_i_oracle
 
@@ -10,5 +9,3 @@ print(
     f"r_c={LOGISTIC_TYPE_I_ONSET:.4f}  n_laminar_phases={len(lengths)}  "
     f"mean_length={lengths.mean():.2f}"
 )
-
-# Full figure: dynachaos run sec12_intermittency
