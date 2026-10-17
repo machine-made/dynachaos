@@ -1,9 +1,5 @@
-# Figure: mean-square displacement (variance) of the mean field h_n of a
-# globally coupled logistic map vs system size N; Kaneko's result is that
-# this MSD decays much slower than the naive N^-1 central-limit rate (and
-# saturates at large N/sample size), a law-of-large-numbers violation.
-# This demo, at much smaller N and sample size than the full figure,
-# already shows a 100x increase in N shrinking the variance by under 5x.
+# Reduced preview (N in (50, 500, 5000), a=1.99). Full figure: dynachaos run sec10_gcm
+# Mean-square displacement (variance) of the mean field h_n of a globally coupled logistic map vs N.
 import numpy as np
 
 from dynachaos.cml.primitives import gcm_step

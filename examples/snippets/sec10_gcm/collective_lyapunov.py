@@ -1,11 +1,10 @@
-# Figure: collective Lyapunov exponent lambda_c of the mean field of a
-# globally coupled logistic map (Kaneko 1990); lambda_c > 0 marks
-# collective chaos of the macroscopic mean field itself.
+# Collective Lyapunov exponent lambda_c of the GCM mean field (N=500, eps=0.1).
+# Full figure: dynachaos run sec10_gcm
 from dynachaos.cml.gcm_clusters import compute_collective
 
 result = compute_collective(
     eps=0.1,
-    n_sites=60,
+    n_sites=500,
     a_values=[1.5, 1.85, 1.99],
     n_transient=200,
     n_measure=2000,
@@ -15,5 +14,3 @@ result = compute_collective(
 )
 for a, lam_c in zip(result["a_values"], result["lyap_c"]):
     print(f"a={a:.2f}  lambda_c={lam_c:.4f}")
-
-# Full figure: dynachaos run sec10_gcm
