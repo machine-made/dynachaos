@@ -182,6 +182,38 @@ jobs:
         # setup-node step and no npm toolchain.
         run: node tests/e2e/live_figure.mjs site
 
+  webkit-smoke:
+    name: WebKit smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          targets: wasm32-unknown-unknown
+      - run: uv sync --all-extras
+      - name: Build the WebAssembly bundle
+        run: uv run python scripts/build_wasm.py
+      - name: Export the chart JSON
+        # Export every figure, as the Pages build does, so the browser test
+        # sees the site readers get: a figure with chart JSON shows the chart,
+        # not the PNG, when it is not live.
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/export_figure_data.py
+      - name: Build the paper page
+        run: uv run python scripts/build_paper.py
+      - name: Run the node unit tests
+        # Name each file. A bare directory made node skip one of the two files.
+        run: node --test tests/js/index.js tests/js/raster.js tests/js/point.js tests/js/live-figure.js tests/js/params.js
+      - name: Install Playwright
+        run: npm install --prefix "$RUNNER_TEMP/pw" --ignore-scripts --no-fund --no-audit playwright@1.63.0
+      - name: Install WebKit browser
+        run: node "$RUNNER_TEMP/pw/node_modules/playwright/cli.js" install --with-deps webkit
+      - name: Run the WebKit smoke test
+        run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw" node tests/e2e/webkit_smoke.mjs site
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
