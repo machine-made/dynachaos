@@ -1,6 +1,5 @@
-# Figure: spatial autocorrelation C(r)/C(0) of a logistic coupled map
-# lattice, decaying from 1 as separation r grows -- faster decay signals a
-# shorter correlation length as the nonlinearity a increases toward chaos.
+# Reduced preview (N = 60, 3 a values). Full figure: dynachaos run sec08_sti
+# Spatial autocorrelation C(r)/C(0) of a logistic coupled map lattice.
 import numpy as np
 
 from dynachaos.cml.primitives import cml_step_logistic as cml_step

@@ -1,6 +1,5 @@
-# Figure: co-moving Lyapunov exponent lambda(v) for a logistic coupled map
-# lattice; its zero crossings mark the propagation velocities of chaotic
-# information in the spatiotemporal state.
+# Reduced preview (N = 60, 3 velocities). Full figure: dynachaos run sec08_sti
+# Co-moving Lyapunov exponent lambda(v) for a logistic coupled map lattice.
 import numpy as np
 
 from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_spectrum_logistic
