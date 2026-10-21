@@ -65,6 +65,7 @@ module-name = "dynachaos._rust"
 python-source = "src"
 
 [tool.uv]
+exclude-newer = "7 days"
 package = true
 cache-keys = [
     { file = "pyproject.toml" },
