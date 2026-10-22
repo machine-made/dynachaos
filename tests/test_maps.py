@@ -1133,10 +1133,48 @@ def test_compute_collective_returns_and_writes_explicit_payload(tmp_path):
         np.testing.assert_allclose(saved["lyap_c"], payload["lyap_c"])
 
 
+def test_sec10_msd_cache_shows_saturation_for_every_a():
+    with np.load("figures/sec10_gcm/gcm_msd.npz", allow_pickle=False) as data:
+        a_values = data["a_values"]
+        N = data["N_values"]
+        msd_all = data["msd_all"]
+        msd_mean = data["msd_mean"]
+        msd_stderr = data["msd_stderr"]
+        fits_A = data["fits_A"]
+        fits_B = data["fits_B"]
+        fits_B_stderr = data["fits_B_stderr"]
+        fits_r2 = data["fits_r2"]
+        n_seeds = int(data["n_seeds"][0])
+
+    np.testing.assert_allclose(a_values, [1.80, 1.85, 1.92, 1.95, 1.99])
+    np.testing.assert_array_equal(N, [100, 200, 500, 1000, 2000, 5000, 10_000, 20_000])
+    assert n_seeds == 8
+    assert msd_all.shape == (5, 8, n_seeds)
+    np.testing.assert_allclose(msd_mean, msd_all.mean(axis=2))
+    np.testing.assert_allclose(msd_stderr, msd_all.std(axis=2, ddof=1) / np.sqrt(n_seeds))
+
+    # The stored fit is the least-squares line MSD = A / N + B through the seed means.
+    for ia in range(5):
+        slope, intercept = np.polyfit(1.0 / N, msd_mean[ia], 1)
+        assert fits_A[ia] == pytest.approx(slope, rel=1e-9)
+        assert fits_B[ia] == pytest.approx(intercept, rel=1e-9)
+
+    # The law of large numbers would give MSD ~ 1 / N, a factor 200 from N = 100 to 20000.
+    # Instead the MSD saturates at B > 0 for every a: B exceeds five standard errors,
+    # the MSD at the two largest sizes agrees to 3 %, and it keeps over 25 % of its value
+    # at N = 100.
+    assert np.all(fits_B > 5.0 * fits_B_stderr)
+    assert np.all(fits_B > 5e-4)
+    assert np.all(fits_r2 > 0.95)
+    ratio_largest = msd_mean[:, -1] / msd_mean[:, -2]
+    assert np.all(np.abs(ratio_largest - 1.0) < 0.03)
+    assert np.all(msd_mean[:, -1] > 0.25 * msd_mean[:, 0])
+
+
 def test_sec10_gcm_caches_preserve_collective_signatures():
-    with np.load("figures/sec10_gcm/gcm_results.npz", allow_pickle=False) as data:
-        N_grid = data["N_grid"]
-        msd_grid = data["msd_grid"]
+    with np.load("figures/sec10_gcm/gcm_msd.npz", allow_pickle=False) as data:
+        N_grid = data["N_values"]
+        msd_grid = data["msd_mean"]
 
     with np.load("figures/sec10_gcm/gcm_clusters.npz", allow_pickle=False) as data:
         cluster_labels = data["cluster_labels"]

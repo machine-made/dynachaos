@@ -857,32 +857,72 @@ def test_gcm_clusters_main_plots_from_cache_when_both_files_exist(monkeypatch, t
 # ---------------------------------------------------------------------------
 # globally_coupled
 #
-# compute() runs 100000-step mean-field samples for 5 lattice sizes, then an
-# 8 x 5 (N, a) grid each with a 5000 step transient plus a 50000 step sample
-# (src/dynachaos/cml/globally_coupled.py:35-92) -- not reachable at test
-# scale. plot_msd/plot_distribution are exercised with tiny synthetic
+# compute() runs 100000-step mean-field samples for 5 lattice sizes, and
+# compute_msd_sweep() runs 5 a values x 8 sizes x 8 seeds, each with a 2000 step
+# transient plus a 10000 step sample (src/dynachaos/cml/globally_coupled.py)
+# -- not reachable at test scale. compute_msd_sweep() is checked on a tiny
+# sweep; plot_msd/plot_distribution are exercised with tiny synthetic
 # payloads shaped like the real schema.
 # ---------------------------------------------------------------------------
+
+
+def _msd_payload(a_values, N_values, n_seeds=3):
+    """A synthetic MSD payload in the schema of compute_msd_sweep (MSD = A/N + B)."""
+    a_values = np.asarray(a_values, dtype=float)
+    N_values = np.asarray(N_values)
+    msd_mean = np.outer(1.0 / (a_values - 1.5), 1.0 / N_values) + 1e-3
+    msd_std = 0.1 * msd_mean
+    return {
+        "a_values": a_values,
+        "N_values": N_values,
+        "eps": np.array([0.1]),
+        "n_seeds": np.array([n_seeds]),
+        "msd_all": np.repeat(msd_mean[:, :, None], n_seeds, axis=2),
+        "msd_mean": msd_mean,
+        "msd_std": msd_std,
+        "msd_stderr": msd_std / np.sqrt(n_seeds),
+        "fits_A": 1.0 / (a_values - 1.5),
+        "fits_B": np.full(a_values.shape, 1e-3),
+        "fits_B_stderr": np.full(a_values.shape, 1e-5),
+        "fits_r2": np.ones(a_values.shape),
+    }
 
 
 def test_globally_coupled_plot_msd_writes_png(monkeypatch, tmp_path):
     png_path = tmp_path / "gcm_msd.png"
     monkeypatch.setattr(globally_coupled, "GCM_PNG", png_path)
 
-    N_grid = np.array([100, 200, 500, 1000])
-    a_for_msd = np.array([1.80, 1.85, 1.92, 1.95, 1.99])
-    msd_grid = np.outer(1.0 / (a_for_msd - 1.5), 1.0 / N_grid)
-
-    data = {
-        "N_grid": N_grid,
-        "msd_grid": msd_grid,
-        "a_for_msd": a_for_msd,
-        "eps": np.array([0.1]),
-    }
+    data = _msd_payload([1.80, 1.85, 1.92, 1.95, 1.99], [100, 200, 500, 1000])
 
     globally_coupled.plot_msd(data)
 
     assert png_path.stat().st_size > 0
+
+
+def test_globally_coupled_msd_sweep_fits_saturation_and_writes_payload(tmp_path):
+    output_path = tmp_path / "gcm_msd.npz"
+
+    payload = globally_coupled.compute_msd_sweep(
+        a_values=(1.99,),
+        N_values=(20, 40, 80, 160),
+        n_seeds=3,
+        n_transient=50,
+        n_sample=300,
+        output_path=output_path,
+    )
+
+    assert payload["msd_all"].shape == (1, 4, 3)
+    np.testing.assert_allclose(payload["msd_mean"], payload["msd_all"].mean(axis=2))
+    np.testing.assert_allclose(payload["msd_std"], payload["msd_all"].std(axis=2, ddof=1))
+    np.testing.assert_allclose(payload["msd_stderr"], payload["msd_std"] / np.sqrt(3))
+    # The stored fit is the least-squares line of the seed-averaged MSD against 1 / N.
+    slope, intercept = np.polyfit(1.0 / payload["N_values"], payload["msd_mean"][0], 1)
+    assert payload["fits_A"][0] == pytest.approx(slope)
+    assert payload["fits_B"][0] == pytest.approx(intercept)
+    assert 0.0 <= payload["fits_r2"][0] <= 1.0
+    with np.load(output_path, allow_pickle=False) as saved:
+        assert set(saved.files) == set(payload)
+        np.testing.assert_array_equal(saved["msd_all"], payload["msd_all"])
 
 
 def test_globally_coupled_plot_distribution_writes_png(monkeypatch, tmp_path):
@@ -908,7 +948,9 @@ def test_globally_coupled_main_plots_from_cache(monkeypatch, tmp_path):
     gcm_png = tmp_path / "gcm_msd.png"
     dist_png = tmp_path / "gcm_distribution.png"
     monkeypatch.setattr(globally_coupled, "FIG_DIR", tmp_path)
+    msd_npz_path = tmp_path / "gcm_msd.npz"
     monkeypatch.setattr(globally_coupled, "GCM_NPZ", npz_path)
+    monkeypatch.setattr(globally_coupled, "MSD_NPZ", msd_npz_path)
     monkeypatch.setattr(globally_coupled, "GCM_PNG", gcm_png)
     monkeypatch.setattr(globally_coupled, "DIST_PNG", dist_png)
 
@@ -920,10 +962,8 @@ def test_globally_coupled_main_plots_from_cache(monkeypatch, tmp_path):
         payload[f"N_{N}_h"] = h
         payload[f"N_{N}_mean"] = np.array([h.mean()])
         payload[f"N_{N}_msd"] = np.array([h.var()])
-    payload["a_for_msd"] = np.array([1.80, 1.99])
-    payload["N_grid"] = np.array([100, 400])
-    payload["msd_grid"] = np.array([[0.02, 0.01], [0.05, 0.03]])
     np.savez_compressed(npz_path, **payload)
+    np.savez_compressed(msd_npz_path, **_msd_payload([1.80, 1.99], [100, 400]))
 
     globally_coupled.main()
 
@@ -936,9 +976,16 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
     gcm_png = tmp_path / "gcm_msd.png"
     dist_png = tmp_path / "gcm_distribution.png"
     monkeypatch.setattr(globally_coupled, "FIG_DIR", tmp_path)
+    msd_npz_path = tmp_path / "gcm_msd.npz"
     monkeypatch.setattr(globally_coupled, "GCM_NPZ", npz_path)
+    monkeypatch.setattr(globally_coupled, "MSD_NPZ", msd_npz_path)
     monkeypatch.setattr(globally_coupled, "GCM_PNG", gcm_png)
     monkeypatch.setattr(globally_coupled, "DIST_PNG", dist_png)
+
+    def fake_msd_sweep():
+        np.savez_compressed(msd_npz_path, **_msd_payload([1.80, 1.99], [100, 400]))
+
+    monkeypatch.setattr(globally_coupled, "compute_msd_sweep", fake_msd_sweep)
 
     def fake_compute():
         rng = np.random.default_rng(11)
@@ -949,9 +996,6 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
             payload[f"N_{N}_h"] = h
             payload[f"N_{N}_mean"] = np.array([h.mean()])
             payload[f"N_{N}_msd"] = np.array([h.var()])
-        payload["a_for_msd"] = np.array([1.80, 1.99])
-        payload["N_grid"] = np.array([100, 400])
-        payload["msd_grid"] = np.array([[0.02, 0.01], [0.05, 0.03]])
         np.savez_compressed(npz_path, **payload)
 
     monkeypatch.setattr(globally_coupled, "compute", fake_compute)
@@ -959,6 +1003,7 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
     globally_coupled.main()
 
     assert npz_path.exists()
+    assert msd_npz_path.exists()
     assert gcm_png.stat().st_size > 0
     assert dist_png.stat().st_size > 0
 

@@ -472,11 +472,13 @@ SECTION_SPECS = {
         ),
         cache_files=(
             "gcm_results.npz",
+            "gcm_msd.npz",
             "gcm_clusters.npz",
             "collective_lyapunov.npz",
         ),
         output_files=(
             "gcm_results.npz",
+            "gcm_msd.npz",
             "gcm_msd.png",
             "gcm_distribution.png",
             "gcm_clusters.npz",
@@ -485,14 +487,31 @@ SECTION_SPECS = {
             "collective_lyapunov.png",
         ),
         npz_contracts=(
-            NpzContract("gcm_results.npz", ("N_values", "a", "eps", "N_grid", "msd_grid")),
+            NpzContract("gcm_results.npz", ("N_values", "a", "eps")),
+            NpzContract(
+                "gcm_msd.npz",
+                (
+                    "a_values",
+                    "N_values",
+                    "eps",
+                    "n_seeds",
+                    "msd_all",
+                    "msd_mean",
+                    "msd_std",
+                    "msd_stderr",
+                    "fits_A",
+                    "fits_B",
+                    "fits_B_stderr",
+                    "fits_r2",
+                ),
+            ),
             NpzContract("gcm_clusters.npz", ("cluster_labels", "x_record", "a", "eps", "N")),
             NpzContract("collective_lyapunov.npz", ("a_values", "lyap_c", "eps", "N")),
         ),
         figures=(
             FigureSpec(
                 "gcm_msd.png",
-                "gcm_results.npz",
+                "gcm_msd.npz",
                 "dynachaos.cml.globally_coupled",
                 "examples/snippets/sec10_gcm/gcm_msd.py",
             ),
