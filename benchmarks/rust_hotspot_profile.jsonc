@@ -1,0 +1,19 @@
+{
+  // Local-friendly profiling for the Rust acceleration roadmap.
+  // Each row runs in a fresh subprocess; measurements are wall time p50 and peak RSS.
+  "repeats": 3,
+  "seed": 20260611,
+  "output": {
+    "json": "benchmarks/results/rust_hotspot_profile.json",
+    "markdown": "benchmarks/results/rust_hotspot_profile.md"
+  },
+  "cases": [
+    {"name": "streaming_rqa", "kind": "streaming_rqa", "N": 4000, "dim": 2, "eps": 0.2, "metric": "euclidean", "l_min": 2, "v_min": 2},
+    {"name": "exact_pair_count_python", "kind": "exact_pair_count", "backend": "python", "N": 4000, "dim": 3, "r_count": 24, "theiler_window": 2, "norm": "chebyshev"},
+    {"name": "exact_pair_count_rust", "kind": "exact_pair_count", "backend": "rust", "N": 12000, "dim": 3, "r_count": 24, "theiler_window": 2, "norm": "chebyshev"},
+    {"name": "comoving_logistic_python", "kind": "comoving_logistic", "backend": "python", "N": 500, "velocity_count": 31, "n_iter": 1000, "n_transient": 300, "a": 1.88, "eps": 0.45},
+    {"name": "comoving_logistic_rust", "kind": "comoving_logistic", "backend": "rust", "N": 500, "velocity_count": 31, "n_iter": 1000, "n_transient": 300, "a": 1.88, "eps": 0.45},
+    {"name": "coupled_logistic_basin_python", "kind": "coupled_logistic_basin", "backend": "python", "n_grid": 180, "n_transient": 1000, "reference_transient": 100000, "period": 32, "A": 1.35344, "D": 0.1},
+    {"name": "coupled_logistic_basin_rust", "kind": "coupled_logistic_basin", "backend": "rust", "n_grid": 360, "n_transient": 3000, "reference_transient": 100000, "period": 32, "A": 1.35344, "D": 0.1}
+  ]
+}

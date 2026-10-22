@@ -1,0 +1,52 @@
+{
+  // Reproducibility seed for random sampling.
+  "seed": 12345,
+
+  // Number of synthetic points sampled from each reference measure.
+  "n_samples_sweep": [600, 1200, 2400, 3600],
+
+  // Repeats for robust median absolute-error estimates.
+  "repeats_accuracy": 3,
+
+  // Repeats for robust median runtime estimates.
+  // Runtime report includes:
+  // - GP core
+  // - MF core
+  // - MF total (binning + core)
+  "repeats_timing": 3,
+
+  // Correlation-dimension (GP) settings.
+  "gp_n_r": 40,
+  "gp_theiler_window": 0,
+
+  // Box-counting grid used to convert sampled points into a measure field.
+  "grid_size": 81,
+
+  // Multifractal box sizes (chosen to align with 3^k grid structure).
+  "box_sizes": [3, 9, 27],
+
+  // q-grid for multifractal spectrum. Must include q = 2 for D2 comparison.
+  "q_values": [-4.0, -2.0, -1.0, 0.0, 1.0, 2.0, 4.0],
+
+  // Sierpinski carpet depth: size = 3^carpet_level.
+  "carpet_level": 4,
+
+  // Reference datasets with known correlation dimensions.
+  "scenarios": [
+    {
+      "name": "Uniform square",
+      "kind": "square",
+      "ref_D2": 2.0
+    },
+    {
+      "name": "Uniform line",
+      "kind": "line",
+      "ref_D2": 1.0
+    },
+    {
+      "name": "Sierpinski carpet",
+      "kind": "carpet",
+      "ref_D2": 1.892789260714372
+    }
+  ]
+}

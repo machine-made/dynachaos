@@ -1,0 +1,4 @@
+# Enable native SIMD (NEON on Apple Silicon, AVX2 on x86).
+# Not portable — but this is research code compiled locally.
+[target.'cfg(any(target_arch = "x86_64", target_arch = "aarch64"))']
+rustflags = ["-C", "target-cpu=native"]

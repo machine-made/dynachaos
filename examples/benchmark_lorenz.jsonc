@@ -1,0 +1,27 @@
+{
+  // --- System parameters (fixed in lorenz_rhs) ---
+  // sigma = 10, rho = 28, beta = 8/3
+
+  // --- Trajectory ---
+  "t_span": [0, 500],        // integration interval
+  "dt": 0.01,                // time step
+  "t_transient": 50.0,       // transient to discard
+
+  // --- Lyapunov ---
+  "lyap_x0": [1.0, 1.0, 1.0],       // initial condition for spectrum
+  "lyap_t_total": 300.0,             // total time for spectrum
+  "lyap_dt": 0.01,                   // time step for spectrum
+  "lyap_t_transient": 50.0,          // transient for spectrum
+  "reorth_dt": 1.0,                  // reorthogonalization interval
+
+  // --- Embedding ---
+  "subsample": 5,            // take every Nth point (dt_eff = 0.05)
+  "tau_max": 100,            // max delay for AMI
+  "d_max": 12,               // max embedding dimension
+  "n_r": 50,                 // number of r values for D2
+
+  // --- Reference values ---
+  "ref_lambda1": 0.9056,     // Sprott (2003)
+  "ref_spectrum": [0.9056, 0.0, -14.57],
+  "ref_D2": 2.05             // G&P 1983, Physica D 9, 189-208
+}

@@ -1,0 +1,21 @@
+[package]
+name = "dynachaos-core"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2024"
+
+[lib]
+name = "dynachaos_core"
+crate-type = ["rlib"]
+
+[dependencies]
+ndarray = "0.17.2"
+rayon = { version = "1.12", optional = true }
+
+[features]
+default = ["parallel"]
+parallel = ["dep:rayon"]
+
+[[example]]
+name = "tile_exit_kinds"
+path = "examples/tile_exit_kinds.rs"

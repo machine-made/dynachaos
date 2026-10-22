@@ -1,0 +1,17 @@
+{
+  // Tested recipe: analyze a reduced/downsampled scalar observable from a long run.
+  "input": {"path": "downsampled_observable_fixture.npy"},
+  "output": {"dir": "outputs/long_signal_streaming_recipe"},
+  "scale_limits": {"dense_rqa_max_bytes": 1048576},
+  "diagnostics": [
+    {"name": "permutation_entropy", "d": 4, "tau": 1, "normalise": true},
+    {
+      "name": "rqa_streaming",
+      "embedding": {"d": 2, "tau": 1},
+      "percentile": 7,
+      "metric": "chebyshev",
+      "l_min": 2,
+      "v_min": 2
+    }
+  ]
+}

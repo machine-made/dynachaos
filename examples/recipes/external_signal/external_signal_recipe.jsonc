@@ -1,0 +1,25 @@
+{
+  // Tested recipe: analyze an externally supplied scalar signal.
+  "input": {"path": "external_signal_fixture.npy"},
+  "output": {"dir": "outputs/external_signal_recipe"},
+  "scale_limits": {"dense_rqa_max_bytes": 4294967296},
+  "diagnostics": [
+    {"name": "permutation_entropy", "d": 3, "tau": 1, "normalise": true},
+    {
+      "name": "correlation_dimension",
+      "embedding": {"d": 2, "tau": 2},
+      "n_r": 12,
+      "max_pairs": 20000,
+      "theiler_window": 2,
+      "norm": "chebyshev"
+    },
+    {
+      "name": "rqa_streaming",
+      "embedding": {"d": 2, "tau": 2},
+      "eps": 0.18,
+      "metric": "chebyshev",
+      "l_min": 2,
+      "v_min": 2
+    }
+  ]
+}

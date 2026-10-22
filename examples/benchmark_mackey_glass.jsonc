@@ -1,0 +1,17 @@
+{
+  // --- System parameters ---
+  "tau_mg": 17,              // Mackey-Glass delay parameter
+  "n_points": 10000,         // number of output points
+  "t_transient": 500,        // transient to discard
+
+  // --- Embedding ---
+  "tau_max": 100,            // max delay for AMI
+  "d_max": 15,               // max embedding dimension
+  "n_r": 50,                 // number of r values for D2
+
+  // --- Reference values ---
+  // Farmer (1982), Physica D 4, 366-393: D_KY = 2.10, D_F = 2.13
+  // Note: ref_D2 is D_KY (Kaplan-Yorke), not GP-measured D2
+  "ref_lambda1": 0.006,      // literature value, not computed
+  "ref_D2": 2.1              // Farmer (1982)
+}

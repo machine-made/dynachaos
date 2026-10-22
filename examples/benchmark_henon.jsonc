@@ -1,0 +1,24 @@
+{
+  // --- System parameters ---
+  "a": 1.4,                  // Henon map parameter
+  "b": 0.3,                  // Henon map parameter
+
+  // --- Trajectory ---
+  "N": 50000,                // number of iterations
+  "n_transient": 10000,      // transient to discard
+  "x0": [0.1, 0.1],         // initial condition
+
+  // --- Lyapunov ---
+  "lyap_n_iter": 200000,     // iterations for spectrum
+  "lyap_n_transient": 20000, // transient for spectrum
+
+  // --- Embedding ---
+  "tau_max": 5,              // max delay for AMI (small for maps)
+  "d_max": 10,               // max embedding dimension
+  "n_r": 50,                 // number of r values for D2
+
+  // --- Reference values ---
+  "ref_lambda1": 0.4192,     // Sprott (2003)
+  "ref_spectrum": [0.4192, -1.623],
+  "ref_D2": 1.21             // G&P 1983, Physica D 9, Table I
+}

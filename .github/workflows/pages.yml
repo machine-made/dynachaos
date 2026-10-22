@@ -1,0 +1,83 @@
+name: Gallery
+
+on:
+  push:
+    branches: [main]
+    # The gallery is derived from the figures, the registry and the caption
+    # table. Nothing else can change it, so nothing else needs to rebuild it.
+    paths:
+      - "figures/**"
+      - "scripts/**"
+      - "web/**"
+      - "assets/fonts/**"
+      - "src/dynachaos/pipelines/registry.py"
+      # The live figures are compiled from the kernels, so a kernel edit
+      # changes the site.
+      - "rust/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# contents: read for the checkout; pages/id-token are the minimum the deploy
+# action needs to mint its OIDC token. Nothing here writes to the repository.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; a queued rebuild supersedes the one behind it.
+# in_progress is not cancelled: a half-published site is worse than a stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build gallery
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
+      - run: uv sync --extra viz
+      # DYNACHAOS_NO_RUST=1 keeps the Rust toolchain out of this job: these
+      # scripts only read the section registry, resize PNGs and decimate cached
+      # arrays, so the accelerated kernels are never touched.
+      - name: Export interactive figure data
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/export_figure_data.py
+      - name: Build figure gallery
+        # Exits non-zero if a registry figure is missing from disk or has no
+        # caption, so this job doubles as a check that figures/ matches the registry.
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/build_gallery.py
+      - name: Build interactive paper
+        # Reads the pre-converted web/paper-body.html. No pandoc, no LaTeX and
+        # no manuscript source is needed here -- that conversion happens locally
+        # and its output is committed.
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/build_paper.py
+      # The steps below build the live-figure kernels. This is the only part of
+      # the job that needs a Rust toolchain: the wasm module is compiled from
+      # rust/core, so a live figure computes with the same code the published
+      # figure used.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build the WebAssembly bundle
+        # The script reads the wasm-bindgen version from rust/wasm/Cargo.lock
+        # and installs the matching command line tool. The versions must agree
+        # exactly or the generated glue does not match the module.
+        run: uv run python scripts/build_wasm.py
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v5.0.0

@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Read-only token: nothing here pushes, comments or publishes.
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python ${{ matrix.python-version }} (pure)
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every interpreter, not just the first to fail. Without this a
+      # single failure cancels the rest of the matrix and platform problems
+      # surface one CI round-trip at a time.
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --all-extras --python ${{ matrix.python-version }}
+      - name: Run tests (pure Python)
+        # -n auto: the suite is embarrassingly parallel and this job ran for
+        # 1h45m serially. Note the floor is one test, not the core count --
+        # sec08_sti alone takes ~33 min without the Rust kernels, so no
+        # amount of parallelism takes this job below that.
+        # Coverage only on 3.14: the tracer slows the quadratic fallbacks,
+        # and one interpreter is enough for the coverage table in the log.
+        run: DYNACHAOS_NO_RUST=1 uv run pytest tests/ -q -n auto --durations=12 ${{ matrix.python-version == '3.14' && '--cov=dynachaos --cov-report=term' || '' }}
+      - name: The suite must not write into the repository
+        # A figure module writes to a module-level path under figures/. A test
+        # that calls one without redirecting that path overwrites a committed
+        # paper figure, and nothing else would notice. Same for the committed
+        # benchmark artifacts, which record a run on named hardware.
+        run: git diff --exit-code -- figures/ benchmarks/results/
+
+  rust-tests:
+    name: Rust extension (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Run the core crate's own tests
+        # The Python tests reach the core only through the extension. Tests
+        # such as the FFT check against direct sums live in the crate itself
+        # and run only here.
+        run: cargo test --manifest-path rust/core/Cargo.toml
+      - name: Build Rust extension
+        run: uv run maturin develop --release
+      - name: Run tests (with Rust)
+        # Coverage only on ubuntu: one OS is enough for the coverage table.
+        run: uv run pytest tests/ -q -n auto --durations=12 ${{ matrix.os == 'ubuntu-latest' && '--cov=dynachaos --cov-report=term' || '' }}
+      - name: The suite must not write into the repository
+        run: git diff --exit-code -- figures/ benchmarks/results/
+
+  wasm-parity:
+    name: WASM matches native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          targets: wasm32-unknown-unknown
+      - run: uv sync --all-extras
+      - name: Build the WebAssembly bundle
+        run: uv run python scripts/build_wasm.py
+      - name: Build the vendored wasm package
+        # pkg/ is what chaos-atlas copies into vendor/dynachaos-wasm. Building
+        # it here proves the package builds from a clean checkout, and the
+        # upload below hands chaos-atlas a stamped artifact to vendor.
+        run: uv run python scripts/build_wasm_pkg.py
+      - name: Test the vendored package
+        # Node is already on the runner image, so this needs no setup-node step.
+        run: node --test tests/js/pkg.js
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dynachaos-wasm-pkg
+          path: pkg/
+      - name: Run the binding's own tests
+        # rust/wasm is its own workspace, so the root `cargo test` never reaches
+        # it. These tests cover the clamping the browser depends on.
+        run: cargo test --manifest-path rust/wasm/Cargo.toml
+      - name: Check the browser build against the native build
+        # Node is already on the runner image, so this needs no setup-node step.
+        # wasmtime would have to be installed first, which is why node wins.
+        # The check compares a fixed tile region by region: it demands a tight
+        # bound where the map is well conditioned, and only that divergence
+        # stays rare where the orbit is chaotic. The reasoning is in the
+        # script's docstring; do not loosen it to make a red run pass.
+        run: uv run python scripts/check_wasm_parity.py
+      - name: Check the live staircase against the published npz
+        # The devil's staircase panel recomputes in the browser at D = 0.25;
+        # this compares the wasm tile against the committed npz at the same A
+        # values, with the parity script's own thresholds.
+        run: uv run python scripts/check_wasm_staircase.py
+      - name: Check the live delayed-logistic attractor against the published npz files
+        # The attractors figure recomputes in the browser at a reader-chosen
+        # D; this compares the wasm tile against both committed npz files at
+        # their exact D values. The map uses only +, -, * so the check is
+        # bit-exact; the reasoning is in the script's docstring.
+        run: uv run python scripts/check_wasm_delayed_logistic.py
+      - name: Check the live torus-doubling attractor against the published npz files
+        # The map (I) attractors figure recomputes in the browser at a
+        # reader-chosen map and D; this compares the wasm tile against both
+        # committed npz files at their exact D values, every state
+        # component. The maps use only +, -, * so the check is bit-exact;
+        # the reasoning is in the script's docstring.
+        run: uv run python scripts/check_wasm_torus_doubling.py
+      - name: Check the live double staircase against the published npz
+        # The double devil's staircase recomputes in the browser over a
+        # reader-chosen D window; this compares the wasm tile against the
+        # committed npz at its exact D values — five grid entries plus every
+        # D inside both zoom windows. A = 0.1 is subcritical, so the bound is
+        # 1e-6 on rho_theta and 1e-12 on rho_phi; the reasoning is in the
+        # script's docstring.
+        run: uv run python scripts/check_wasm_modulated_circle.py
+      - name: Build the paper page
+        # site/ is not in the repository. build_paper.py writes
+        # site/live/cml-x0.json, which the CML check below reads.
+        run: uv run python scripts/build_paper.py
+      - name: Check the live CML space-time figure against the published npz
+        # The space-time figure recomputes in the browser at a reader-chosen
+        # model, eps and site count; this compares the wasm tile against the
+        # nine committed npz fields (A and C bit for bit, B against a numpy
+        # ensemble with a 1-ulp error on every sin), checks the page's x0 JSON
+        # against the paper's seed-42 field, and proves a play chunk
+        # continues the run bit for bit. The reasoning is in the script's
+        # docstring.
+        run: uv run python scripts/check_wasm_cml_spacetime.py
+      - name: Check the diagnostics exports against the native build
+        # Counts must match exactly; the fuzzy-entropy sum has a stated
+        # tolerance, justified in the script's docstring.
+        run: uv run python scripts/check_wasm_diagnostics.py
+
+  live-figure:
+    name: Live figure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          targets: wasm32-unknown-unknown
+      - run: uv sync --all-extras
+      - name: Build the WebAssembly bundle
+        run: uv run python scripts/build_wasm.py
+      - name: Export the chart JSON
+        # Export every figure, as the Pages build does, so the browser test
+        # sees the site readers get: a figure with chart JSON shows the chart,
+        # not the PNG, when it is not live.
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/export_figure_data.py
+      - name: Build the paper page
+        run: uv run python scripts/build_paper.py
+      - name: Run the node unit tests
+        # Name each file. A bare directory made node skip one of the two files.
+        run: node --test tests/js/index.js tests/js/raster.js tests/js/point.js tests/js/live-figure.js tests/js/params.js
+      - name: Run the live-figure end-to-end test
+        # Node and Chrome are already on the runner image, so this needs no
+        # setup-node step and no npm toolchain.
+        run: node tests/e2e/live_figure.mjs site
+
+  webkit-smoke:
+    name: WebKit smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          targets: wasm32-unknown-unknown
+      - run: uv sync --all-extras
+      - name: Build the WebAssembly bundle
+        run: uv run python scripts/build_wasm.py
+      - name: Export the chart JSON
+        # Export every figure, as the Pages build does, so the browser test
+        # sees the site readers get: a figure with chart JSON shows the chart,
+        # not the PNG, when it is not live.
+        run: DYNACHAOS_NO_RUST=1 uv run --extra viz python scripts/export_figure_data.py
+      - name: Build the paper page
+        run: uv run python scripts/build_paper.py
+      - name: Run the node unit tests
+        # Name each file. A bare directory made node skip one of the two files.
+        run: node --test tests/js/index.js tests/js/raster.js tests/js/point.js tests/js/live-figure.js tests/js/params.js
+      - name: Install Playwright
+        run: npm install --prefix "$RUNNER_TEMP/pw" --ignore-scripts --no-fund --no-audit playwright@1.63.0
+      - name: Install WebKit browser
+        run: node "$RUNNER_TEMP/pw/node_modules/playwright/cli.js" install --with-deps webkit
+      - name: Run the WebKit smoke test
+        run: PLAYWRIGHT_DIR="$RUNNER_TEMP/pw" node tests/e2e/webkit_smoke.mjs site
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4  # stable @ 2026-07-26
+        with:
+          components: rustfmt, clippy
+      - run: uv sync --all-extras
+      - run: uv run ruff check src/ tests/ scripts/
+      - run: uv run ruff format --check src/ tests/ scripts/
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --manifest-path rust/core/Cargo.toml --no-default-features --all-targets -- -D warnings
+      # rust/wasm declares its own [workspace] so that a browser build does not
+      # depend on the state of the native build. The price is that --all and
+      # --workspace above do not reach it, so it needs its own two lines. It
+      # builds for the host here, which is enough for clippy.
+      - run: cargo fmt --manifest-path rust/wasm/Cargo.toml --all -- --check
+      - run: cargo clippy --manifest-path rust/wasm/Cargo.toml --all-targets -- -D warnings

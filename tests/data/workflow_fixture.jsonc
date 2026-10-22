@@ -1,0 +1,10 @@
+{
+  // Copy this config beside workflow_signal.npy or edit paths in a local run.
+  "input": {"path": "workflow_signal.npy"},
+  "output": {"dir": "workflow_output"},
+  "scale_limits": {"dense_rqa_max_bytes": 4294967296},
+  "diagnostics": [
+    {"name": "permutation_entropy", "d": 3, "tau": 1},
+    {"name": "rqa_streaming", "embedding": {"d": 2, "tau": 1}, "eps": 0.08, "l_min": 2, "v_min": 2}
+  ]
+}
