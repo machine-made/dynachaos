@@ -233,7 +233,19 @@ SECTION_SPECS = {
         ),
         npz_contracts=(
             NpzContract("attractors.npz", ("D_values", "A")),
-            NpzContract("lyapunov_vs_D.npz", ("D", "spectra")),
+            NpzContract(
+                "lyapunov_vs_D.npz",
+                (
+                    "D",
+                    "spectra",
+                    "spectra_err",
+                    "A",
+                    "freqs_170",
+                    "psd_170",
+                    "freqs_186",
+                    "psd_186",
+                ),
+            ),
             NpzContract("locking_sequence.npz", ("D_values", "A")),
         ),
         figures=(

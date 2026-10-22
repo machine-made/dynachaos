@@ -638,14 +638,76 @@ def test_compute_delayed_locking_rejects_rounded_key_collisions():
         )
 
 
+def test_sec05_lyapunov_sweep_and_power_spectra_cache():
+    with np.load("figures/sec05_oscillation/lyapunov_vs_D.npz", allow_pickle=False) as data:
+        D = data["D"]
+        spectra = data["spectra"]
+        spectra_err = data["spectra_err"]
+        A = float(data["A"][0])
+        spectrum = {tag: (data[f"freqs_{tag}"], data[f"psd_{tag}"]) for tag in ("170", "186")}
+
+    assert A == pytest.approx(0.3)
+    np.testing.assert_allclose(D, np.linspace(1.20, 2.20, 2000))
+    assert spectra.shape == (2000, 2)
+    assert spectra_err.shape == (2000, 2)
+    assert np.all(np.isfinite(spectra))
+    lam1, lam2 = spectra[:, 0], spectra[:, 1]
+
+    # Below the Neimark-Sacker point D_c = (3 - 2A) / (4 (1 - A)^2) the fixed point is
+    # stable (lambda_1 < 0); the smooth torus has lambda_1 = 0 and a contracting lambda_2.
+    D_c = (3.0 - 2.0 * A) / (4.0 * (1.0 - A) ** 2)
+    assert np.all(lam1[D < D_c] < 0.0)
+    torus = (D > 1.26) & (D < 1.75)
+    assert np.all(np.abs(lam1[torus]) < 5e-4)
+    assert np.all(lam2[torus] < -0.01)
+    assert lam1.max() > 0.05
+
+    # Power spectra: normalised to a maximum of 1, a single rotation frequency
+    # f0 = 0.2254 carries the main peak, and the second to fourth harmonics (folded into
+    # [0, 0.5]) grow as the circle wrinkles from D = 1.70 to D = 1.86.
+    harmonic_power = {}
+    for tag, (freqs, psd) in spectrum.items():
+        assert freqs[0] == 0.0
+        assert freqs[-1] == pytest.approx(0.5)
+        assert psd.max() == pytest.approx(1.0)
+        f0 = freqs[np.argmax(psd)]
+        assert f0 == pytest.approx(0.2254, abs=2e-3)
+        power = 0.0
+        for k in (2, 3, 4):
+            folded = (k * f0) % 1.0
+            folded = min(folded, 1.0 - folded)
+            near = np.abs(freqs - folded) < 2e-3
+            power += psd[near].max()
+        harmonic_power[tag] = power
+    assert harmonic_power["186"] > 1.3 * harmonic_power["170"]
+
+
 def test_delayed_logistic_panel_labels_match_lyapunov_signs():
+    """Each panel's label must agree with lambda_1 evaluated at the panel's own D.
+
+    The sweep grid (2000 points on [1.20, 2.20], step 5.0e-4) does not contain the panel
+    values, and lambda_1 changes by a factor of four within one grid step near D = 1.94
+    (nearest grid point 1.93987: +0.00075; at 1.94 itself: +0.00322), so the sweep cannot
+    stand in for the panel.
+    """
+    from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
+
     with np.load("figures/sec05_oscillation/attractors.npz", allow_pickle=False) as data:
         attractor_D = data["D_values"]
     with np.load("figures/sec05_oscillation/locking_sequence.npz", allow_pickle=False) as data:
         locking_D = data["D_values"]
-    with np.load("figures/sec05_oscillation/lyapunov_vs_D.npz", allow_pickle=False) as data:
-        lyap_D = data["D"]
-        lambda1 = data["spectra"][:, 0]
+    A = 0.3
+
+    def lambda_1(D):
+        fp = (np.sqrt(1.0 + 4.0 * D) - 1.0) / (2.0 * D)
+        spectrum = lyapunov_spectrum(
+            lambda s, _D=D: delayed_logistic(s, A, _D),
+            lambda s, _D=D: delayed_logistic_jac(s, A, _D),
+            np.array([fp + 0.01, fp - 0.01]),
+            n_iter=100_000,
+            n_transient=20_000,
+        )
+        return spectrum[0]
 
     expected = {
         "chaos": "positive",
@@ -660,8 +722,7 @@ def test_delayed_logistic_panel_labels_match_lyapunov_signs():
     ):
         assert len(D_values) == len(labels)
         for D, label in zip(D_values, labels, strict=True):
-            idx = np.argmin(np.abs(lyap_D - D))
-            lam = lambda1[idx]
+            lam = lambda_1(float(D))
             if expected[label] == "positive":
                 assert lam > 1e-3, f"{label=} at D={D} must have positive lambda1, got {lam}"
             elif expected[label] == "negative":

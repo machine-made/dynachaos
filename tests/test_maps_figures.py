@@ -50,19 +50,23 @@ def test_delayed_logistic_plot_attractors_writes_png(monkeypatch, tmp_path):
     assert png_path.stat().st_size > 0
 
 
-def test_delayed_logistic_plot_lyapunov_writes_png_with_convergence_inset(monkeypatch, tmp_path):
+def test_delayed_logistic_plot_lyapunov_writes_png_with_power_spectra(monkeypatch, tmp_path):
     png_path = tmp_path / "lyapunov_vs_D.png"
     monkeypatch.setattr(delayed_logistic, "LYAP_PNG", png_path)
 
-    # D values inside [1.85, 2.15] so the convergence-band inset branch
-    # (delayed_logistic.py:332-351) is exercised too.
     payload = delayed_logistic.compute_lyapunov_spectrum(
         D_values=np.linspace(1.85, 2.15, 4),
         n_iter=20,
         n_transient=5,
+        psd_D=delayed_logistic.PSD_DISPLAY_D,
+        psd_n_transient=20,
+        psd_n_record=64,
         output_path=None,
         progress_interval=0,
     )
+
+    assert {"freqs_170", "psd_170", "freqs_186", "psd_186", "A"} <= set(payload)
+    assert payload["freqs_170"].shape == (33,)
 
     delayed_logistic.plot_lyapunov(payload)
 

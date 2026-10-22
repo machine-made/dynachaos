@@ -14,7 +14,8 @@ Neimark-Sacker bifurcation at D_c = (3-2A)/(4(1-A)^2), torus appears for D > D_c
 Figures:
   - Attractor portraits at A=0.3 for twelve D values from 1.55 to 2.16
     (extending Kaneko's Fig. 1 with finer progression)
-  - Lyapunov exponents along the D path
+  - Lyapunov exponents along the D path (a) and the power spectra of x_n for a smooth
+    torus (D = 1.70) and a wrinkled torus (D = 1.86) (b)
   - Animated GIF of attractor evolution across D
 
 OUTPUTS: figures/sec05_oscillation/attractors.npz,
@@ -40,6 +41,19 @@ ANIM_NPZ = FIG_DIR / "attractors_animation.npz"
 ANIM_GIF = FIG_DIR / "attractors_animation.gif"
 LOCK_NPZ = FIG_DIR / "locking_sequence.npz"
 LOCK_PNG = FIG_DIR / "locking_sequence.png"
+
+# Drive amplitudes of the two power spectra beside the Lyapunov sweep.
+PSD_DISPLAY_D = (1.70, 1.86)
+LYAP_REQUIRED_KEYS = (
+    "D",
+    "spectra",
+    "spectra_err",
+    "A",
+    "freqs_170",
+    "psd_170",
+    "freqs_186",
+    "psd_186",
+)
 
 ATTRACTOR_LABELS_SHORT = [
     "torus",
@@ -146,20 +160,53 @@ def compute_attractors(
 # ---------------------------------------------------------------------------
 
 
+def _psd_tag(D):
+    """Key suffix of a power-spectrum entry: D = 1.70 -> '170'."""
+    return f"{round(100.0 * float(D)):d}"
+
+
+def compute_psd(A, D, n_transient=20_000, n_record=32_768):
+    """Normalised power spectrum of x_n of the delayed logistic map at drive ``D``.
+
+    The record is mean-subtracted and Hann-windowed; the spectrum is scaled to a
+    maximum of 1.  Returns ``(freqs, psd)`` with frequencies in cycles per iteration.
+    """
+    fp = (np.sqrt(1.0 + 4.0 * D) - 1.0) / (2.0 * D)
+    x0 = np.array([fp + 0.01, fp - 0.01], dtype=np.float64)
+    traj = trajectory_after_transient(
+        x0,
+        lambda s: delayed_logistic(s, A, D),
+        n_transient,
+        n_record,
+    )
+    x = traj[:, 0]
+    xw = (x - np.mean(x)) * np.hanning(len(x))
+    psd = np.abs(np.fft.rfft(xw)) ** 2
+    return np.fft.rfftfreq(len(x)), psd / np.max(psd)
+
+
 def compute_lyapunov_spectrum(
     *,
     A=0.3,
     D_values=None,
     n_iter=50_000,
     n_transient=10_000,
+    psd_D=(),
+    psd_n_transient=20_000,
+    psd_n_record=32_768,
     output_path=LYAP_NPZ,
     progress_interval=500,
 ):
-    """Sweep D and compute Lyapunov spectrum."""
+    """Sweep D and compute the Lyapunov spectrum.
+
+    ``D_values`` defaults to 2000 points on [1.20, 2.20].  Every D in ``psd_D``
+    also gets a power spectrum, stored as ``freqs_<tag>`` and ``psd_<tag>``
+    (tag = 100 D, e.g. ``freqs_170`` for D = 1.70).
+    """
     from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
 
     if D_values is None:
-        D_values = np.linspace(1.3, 2.5, 2000)
+        D_values = np.linspace(1.20, 2.20, 2000)
     else:
         D_values = np.atleast_1d(np.asarray(D_values, dtype=np.float64))
     n_params = len(D_values)
@@ -191,11 +238,19 @@ def compute_lyapunov_spectrum(
                 base_dir=FIG_DIR,
             )
 
-    return _io_write_payload(
-        output_path,
-        {"D": D_values, "spectra": spectra, "spectra_err": spectra_err},
-        base_dir=FIG_DIR,
-    )
+    payload = {"D": D_values, "spectra": spectra, "spectra_err": spectra_err}
+    for D in psd_D:
+        print(f"  Power spectrum at D = {D}")
+        freqs, psd = compute_psd(A, D, n_transient=psd_n_transient, n_record=psd_n_record)
+        payload[f"freqs_{_psd_tag(D)}"] = freqs
+        payload[f"psd_{_psd_tag(D)}"] = psd
+    payload["A"] = np.array([A])
+    return _io_write_payload(output_path, payload, base_dir=FIG_DIR)
+
+
+def compute_lyapunov_figure_data():
+    """Compute the data of the Lyapunov figure: the D sweep and the two power spectra."""
+    return compute_lyapunov_spectrum(psd_D=PSD_DISPLAY_D)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +322,7 @@ def plot_attractors(data):
 
 
 def plot_lyapunov(data):
-    """Plot Lyapunov spectrum vs D."""
+    """Plot (a) the Lyapunov spectrum vs D and (b) the power spectra of x_n."""
     import matplotlib.pyplot as plt
 
     from dynachaos.utils.style import (
@@ -276,6 +331,7 @@ def plot_lyapunov(data):
         figure_spec,
         finalize_legend,
         lyap_color,
+        panel_label,
         reference_line,
         setup,
     )
@@ -284,71 +340,70 @@ def plot_lyapunov(data):
 
     D = data["D"]
     spectra = data["spectra"]
-    spectra_err = data.get("spectra_err", np.zeros_like(spectra))
+    spectra_err = data["spectra_err"]
+    alpha = float(data["A"][0])
 
     spec = figure_spec("double")
-    fig, ax = plt.subplots(figsize=spec.figsize)
-    ax.plot(D, spectra[:, 0], color=lyap_color(0), linestyle="-", lw=0.8, label=r"$\lambda_1$")
-    # Finite-time convergence band (Benettin running estimate spread). The
-    # underlying spread is genuinely narrow, so alpha/edges are pushed up to
-    # keep it visible rather than sub-pixel; see plan-figures.md sec05
-    # lyapunov_vs_D notes.
-    ax.fill_between(
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(spec.figsize[0], 3.2))
+    fig.subplots_adjust(wspace=0.24, bottom=0.18)
+
+    # Panel (a): Lyapunov spectrum with the finite-time convergence band
+    ax1.plot(D, spectra[:, 0], color=lyap_color(0), lw=0.9, label=r"$\lambda_1$")
+    ax1.fill_between(
         D,
         spectra[:, 0] - spectra_err[:, 0],
         spectra[:, 0] + spectra_err[:, 0],
-        alpha=0.45,
+        alpha=0.30,
         color=lyap_color(0),
-        edgecolor=lyap_color(0),
-        linewidth=0.3,
-        zorder=1.5,
+        linewidth=0,
     )
-    ax.plot(D, spectra[:, 1], color=lyap_color(1), linestyle="-", lw=0.8, label=r"$\lambda_2$")
-    reference_line(ax, 0, axis="y", lw=0.7)
-    ax.set_xlabel(r"$D$")
-    ax.set_ylabel(r"Lyapunov exponent")
-    ax.set_title(r"Delayed logistic map, $\alpha = 0.3$", loc="left")
-    apply_axes_polish(ax, kind="double", title_loc="left")
-    finalize_legend(ax, kind="double", loc="upper right")
+    ax1.plot(D, spectra[:, 1], color=lyap_color(1), lw=0.9, label=r"$\lambda_2$")
+    reference_line(ax1, 0, axis="y", lw=0.5, alpha=0.6)
 
-    # Mark key transitions
-    alpha = 0.3
-    D_hopf = (3.0 - 2.0 * alpha) / (4.0 * (1.0 - alpha) ** 2)  # approx 1.2245
-    reference_line(ax, D_hopf, axis="x", lw=0.5, ls=":", alpha=0.7)
-    ax.text(
+    D_hopf = (3.0 - 2.0 * alpha) / (4.0 * (1.0 - alpha) ** 2)  # ~1.2245
+    reference_line(ax1, D_hopf, axis="x", lw=0.5, ls=":", alpha=0.7)
+    ax1.text(
         D_hopf + 0.02,
-        ax.get_ylim()[1] * 0.8,
-        r"$D_c = \frac{3-2\alpha}{4(1-\alpha)^2}$",
-        fontsize=spec.tick_size,
+        0.25,
+        r"$D_c \approx 1.225$",
+        fontsize=spec.tick_size - 1,
         color=COLORS["grey"],
     )
 
-    # The convergence band (spectra_err) is a few x1e-3 wide against a
-    # y-range of ~0.6, so it is genuinely sub-pixel at the full-panel scale
-    # above -- an inset over the locking/transition region (D in
-    # [1.85, 2.15], where the running Benettin estimate is least converged)
-    # is the only way the shaded band the caption describes is actually
-    # visible, and it reuses the empty lower-right quadrant of the panel.
-    inset_mask = (D >= 1.85) & (D <= 2.15)
-    if np.any(inset_mask) and np.any(spectra_err[inset_mask, 0] > 0):
-        ax_inset = ax.inset_axes((0.60, 0.06, 0.38, 0.42))
-        D_in = D[inset_mask]
-        lam1_in = spectra[inset_mask, 0]
-        err_in = spectra_err[inset_mask, 0]
-        ax_inset.plot(D_in, lam1_in, color=lyap_color(0), lw=0.8)
-        ax_inset.fill_between(
-            D_in,
-            lam1_in - err_in,
-            lam1_in + err_in,
-            alpha=0.45,
-            color=lyap_color(0),
-            edgecolor=lyap_color(0),
-            linewidth=0.3,
+    ax1.set_xlabel(r"Drive amplitude $D$")
+    ax1.set_ylabel(r"Lyapunov exponent")
+    ax1.set_title(r"Lyapunov spectrum ($\alpha = 0.3$)", loc="left")
+    ax1.set_ylim(-0.45, 0.45)
+    apply_axes_polish(ax1, kind="double", title_loc="left")
+    finalize_legend(ax1, kind="single", loc="lower left")
+    panel_label(ax1, "(a)")
+
+    # Panel (b): power spectra of a smooth and a wrinkled torus, in dB
+    for d_val, color in zip(PSD_DISPLAY_D, (COLORS["blue"], COLORS["red"]), strict=True):
+        tag = _psd_tag(d_val)
+        psd_db = 10.0 * np.log10(np.maximum(data[f"psd_{tag}"], 1e-6))
+        ax2.plot(
+            data[f"freqs_{tag}"],
+            psd_db,
+            color=color,
+            lw=0.8,
+            alpha=0.85,
+            label=rf"$D = {d_val:.2f}$",
         )
-        reference_line(ax_inset, 0, axis="y", lw=0.5)
-        ax_inset.set_xlim(1.85, 2.15)
-        ax_inset.tick_params(labelsize=spec.tick_size - 1)
-        ax_inset.set_title("convergence band (inset)", fontsize=spec.tick_size, loc="left", pad=2)
+
+    # Primary winding frequency f0 approx 0.225
+    f0 = 0.2254
+    ax2.axvline(f0, color=COLORS["black"], ls="--", lw=0.6, alpha=0.6)
+    ax2.text(f0, -4, r"$f_0$", ha="center", fontsize=spec.tick_size, color=COLORS["black"])
+
+    ax2.set_xlim(0.0, 0.5)
+    ax2.set_ylim(-55, 5)
+    ax2.set_xlabel(r"Frequency $f$ (dimensionless)")
+    ax2.set_ylabel(r"Power spectrum $S(f)$ (dB)")
+    ax2.set_title(r"Harmonics of the rotation frequency in $x_n$", loc="left")
+    apply_axes_polish(ax2, kind="double", title_loc="left")
+    finalize_legend(ax2, kind="single", loc="lower right")
+    panel_label(ax2, "(b)")
 
     fig.savefig(LYAP_PNG, dpi=600, bbox_inches="tight")
     plt.close(fig)
@@ -500,8 +555,8 @@ def main():
     lyap_data = load_or_compute_payload(
         LYAP_NPZ,
         "Lyapunov spectrum",
-        compute_lyapunov_spectrum,
-        required_keys=("D", "spectra"),
+        compute_lyapunov_figure_data,
+        required_keys=LYAP_REQUIRED_KEYS,
     )
     plot_lyapunov(lyap_data)
 
