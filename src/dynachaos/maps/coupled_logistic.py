@@ -711,9 +711,9 @@ def plot_basins(data):
         )
 
     legend_elements = [
-        Patch(facecolor=COLORS["blue"], edgecolor="none", label="Cycle 1"),
-        Patch(facecolor=COLORS["red"], edgecolor="none", label="Cycle 2"),
-        Patch(facecolor=COLORS["grey"], edgecolor="none", label="Diagonal"),
+        Patch(facecolor=COLORS["blue"], lw=0, label="Cycle 1"),
+        Patch(facecolor=COLORS["red"], lw=0, label="Cycle 2"),
+        Patch(facecolor=COLORS["grey"], lw=0, label="Diagonal"),
     ]
     if any(np.any(data[f"basin{suffix}"] == -1) for suffix in suffixes):
         legend_elements.insert(
