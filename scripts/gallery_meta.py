@@ -117,6 +117,11 @@ CAPTIONS: dict[str, str] = {
         "Largest Lyapunov exponent of the site dynamics of a globally coupled map against the "
         "nonlinearity, for three system sizes."
     ),
+    "sec10_gcm/gcm_collective_fsle.png": (
+        "Finite-size Lyapunov exponent of the mean field of a heterogeneous globally coupled map: "
+        "the microscopic exponent below a scale that shrinks with system size, a slower collective "
+        "exponent above it."
+    ),
     "sec11_diagnostics/test01_sweep.png": (
         "The 0-1 test statistic for the logistic map, near 0 in periodic windows and near 1 "
         "in chaotic bands."
