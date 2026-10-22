@@ -10,7 +10,11 @@ Maps investigated:
        Z_{n+1} = AZ_n + (1-A)(1-DW_n^2), W_{n+1} = X_n;  A=0.3
 
 Figures:
-  - Projections onto (X,Y) plane for Map (I): D=2.11 (torus), 2.16 (2x torus), 2.19 (chaos)
+  - Projections onto (X,Y) plane for Map (I): D=2.11 (torus), 2.16 (2x torus), 2.19 (chaos).
+    Kaneko (1983, Table I) gives one doubling for Map (I) at A=0.4, D_1 = 2.151, and the
+    onset of chaos at D_c = 2.163.  The Lyapunov scan over D in [2.150, 2.175] stored with
+    the figure (20,000 iterates per point) keeps lambda_1 < 0.002 and does not resolve these
+    two values; they are Kaneko's.
   - Projections for Map (IV): D=1.515 (4x torus), 1.5206 (8x torus), 1.5212 (chaos)
   - Lyapunov exponents for Map (IV) vs D
 
@@ -36,6 +40,9 @@ MAP1_ANIM_NPZ = FIG_DIR / "map_I_animation.npz"
 MAP1_ANIM_GIF = FIG_DIR / "map_I_animation.gif"
 MAP4_ANIM_NPZ = FIG_DIR / "map_IV_animation.npz"
 MAP4_ANIM_GIF = FIG_DIR / "map_IV_animation.gif"
+
+# Lyapunov scan of Map (I) across the doubling window at A = 0.4.
+MAP1_SCAN_D = np.linspace(2.150, 2.175, 26)
 
 
 # ---------------------------------------------------------------------------
@@ -100,15 +107,39 @@ def iterate_map(f, x0, A, D, n_transient=20_000, n_plot=100_000):
     )
 
 
+def map_I_lyapunov_scan(A, scan_D, n_transient=10_000, n_iter=20_000):
+    """Lyapunov spectrum of Map (I) at each D in ``scan_D``, shape ``(len(scan_D), 3)``."""
+    from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
+
+    x0 = np.array([0.5, 0.5, 0.5])
+    spectra = np.empty((len(scan_D), 3), dtype=np.float64)
+    for idx, D in enumerate(scan_D):
+        spectra[idx] = lyapunov_spectrum(
+            lambda state, _D=D: map_I(state, A, _D),
+            lambda state, _D=D: map_I_jac(state, A, _D),
+            x0,
+            n_iter=n_iter,
+            n_transient=n_transient,
+        )
+    return spectra
+
+
 def compute_map_I(
     *,
     A=0.4,
     D_values=None,
     n_transient=20_000,
     n_plot=100_000,
+    scan_D=None,
+    scan_n_transient=10_000,
+    scan_n_iter=20_000,
     output_path=MAP1_NPZ,
 ):
-    """Compute Map (I) attractors at A=0.4."""
+    """Compute Map (I) attractors at A=0.4.
+
+    When ``scan_D`` is given, the Lyapunov spectrum is also computed on that
+    grid and stored as ``scan_D`` and ``scan_lyap`` (shape ``(len(scan_D), 3)``).
+    """
     if D_values is None:
         D_values = [2.11, 2.16, 2.19]
     else:
@@ -124,7 +155,20 @@ def compute_map_I(
         if traj is not None:
             results[f"D_{D}_traj"] = traj
     results["D_values"] = np.array(D_values)
+    results["A"] = np.array([A], dtype=np.float64)
+    if scan_D is not None:
+        scan_D = np.asarray(scan_D, dtype=np.float64)
+        print(f"  Map (I): Lyapunov scan over {len(scan_D)} values of D")
+        results["scan_D"] = scan_D
+        results["scan_lyap"] = map_I_lyapunov_scan(
+            A, scan_D, n_transient=scan_n_transient, n_iter=scan_n_iter
+        )
     return _io_write_payload(output_path, results, base_dir=FIG_DIR)
+
+
+def compute_map_I_figure_data():
+    """Compute the data of the Map (I) figure: three attractors and the doubling-window scan."""
+    return compute_map_I(scan_D=MAP1_SCAN_D)
 
 
 def compute_map_IV(
@@ -207,10 +251,10 @@ def plot_map_I(data):
     setup()
 
     D_values = data["D_values"]
-    labels = ["torus", r"$2\times$torus", "chaos"]
+    labels = ["1x torus", r"2x torus", "chaos"]
 
     spec = figure_spec("grid")
-    fig, axes = plt.subplots(1, 3, figsize=(spec.figsize[0], 2.75))
+    fig, axes = plt.subplots(1, 3, figsize=(spec.figsize[0], 2.85))
     fig.subplots_adjust(wspace=0.24)
     for idx, D in enumerate(D_values):
         ax = axes[idx]
@@ -220,15 +264,17 @@ def plot_map_I(data):
             ax.scatter(
                 traj[:, 0], traj[:, 1], s=0.012, c=COLORS["black"], alpha=0.22, rasterized=True
             )
-        ax.set_title(f"$D={D}$ ({labels[idx]})", loc="left")
+        ax.set_title(rf"$D={D}$ ({labels[idx]})", loc="left")
         ax.set_xlabel("$X$")
         if idx == 0:
             ax.set_ylabel("$Y$")
+        else:
+            ax.set_ylabel("")
         apply_axes_polish(ax, kind="grid", title_loc="left", grid=False, equal=True)
-        panel_label(ax, chr(ord("a") + idx))
+        panel_label(ax, f"({chr(ord('a') + idx)})")
 
     fig.suptitle(
-        "Map (I), $\\alpha = 0.4$: projection onto $(X, Y)$",
+        r"Map (I), $\alpha = 0.4$: projection onto $(X, Y)$",
         x=0.01,
         ha="left",
         y=1.02,
@@ -457,8 +503,8 @@ def main():
     m1_data = load_or_compute_payload(
         MAP1_NPZ,
         "Map (I) attractors",
-        compute_map_I,
-        required_keys=("D_values",),
+        compute_map_I_figure_data,
+        required_keys=("D_values", "A", "scan_D", "scan_lyap"),
     )
     plot_map_I(m1_data)
 

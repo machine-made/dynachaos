@@ -197,7 +197,7 @@ SECTION_SPECS = {
             "map_IV_lyapunov.png",
         ),
         npz_contracts=(
-            NpzContract("map_I_attractors.npz", ("D_values",)),
+            NpzContract("map_I_attractors.npz", ("D_values", "A", "scan_D", "scan_lyap")),
             NpzContract("map_IV_attractors.npz", ("D_values",)),
             NpzContract("map_IV_lyapunov.npz", ("D", "spectra")),
         ),

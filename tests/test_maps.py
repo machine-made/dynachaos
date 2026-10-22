@@ -215,6 +215,67 @@ def test_sec03_basin_cache_is_mirror_symmetric_with_nested_stripes():
         assert changes >= minimum_changes
 
 
+def test_compute_map_I_scan_matches_direct_lyapunov_spectrum(tmp_path):
+    scan_D = np.array([2.15, 2.17])
+    payload = compute_map_I(
+        D_values=np.array([2.11]),
+        n_transient=2,
+        n_plot=4,
+        scan_D=scan_D,
+        scan_n_transient=50,
+        scan_n_iter=200,
+        output_path=tmp_path / "map_I_scan.npz",
+    )
+
+    assert payload["A"].tolist() == [0.4]
+    np.testing.assert_array_equal(payload["scan_D"], scan_D)
+    assert payload["scan_lyap"].shape == (2, 3)
+    from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
+
+    for D, row in zip(scan_D, payload["scan_lyap"], strict=True):
+        expected = lyapunov_spectrum(
+            lambda s, _D=D: map_I(s, 0.4, _D),
+            lambda s, _D=D: map_I_jac(s, 0.4, _D),
+            np.array([0.5, 0.5, 0.5]),
+            n_iter=200,
+            n_transient=50,
+        )
+        np.testing.assert_allclose(row, expected, rtol=1e-12)
+
+
+def test_sec04_map_I_cache_holds_three_attractors_and_the_doubling_window_scan():
+    from dynachaos.maps.torus_doubling import map_I_lyapunov_scan
+
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec04_doubling"
+    with np.load(figure_dir / "map_I_attractors.npz", allow_pickle=False) as data:
+        D_values = data["D_values"]
+        A = float(data["A"][0])
+        scan_D = data["scan_D"]
+        scan_lyap = data["scan_lyap"]
+        trajectories = [data[f"D_{D}_traj"] for D in D_values]
+
+    assert A == pytest.approx(0.4)
+    np.testing.assert_allclose(D_values, [2.11, 2.16, 2.19])
+    for traj in trajectories:
+        assert traj.shape == (100_000, 3)
+        assert np.all(np.isfinite(traj))
+        assert np.all(np.abs(traj) < 2.0)
+
+    # Scan over the doubling window D in [2.150, 2.175], 26 values, three exponents each.
+    np.testing.assert_allclose(scan_D, np.linspace(2.150, 2.175, 26))
+    assert scan_lyap.shape == (26, 3)
+    assert np.all(np.isfinite(scan_lyap))
+    # The scan shows no resolved chaos (lambda_1 < 0.002) and a contracting third direction.
+    assert np.max(scan_lyap[:, 0]) < 0.002
+    assert np.all(scan_lyap[:, 2] < -0.05)
+
+    # Independent recomputation at the three displayed D: the 1x torus has lambda_1 = 0
+    # and chaos beyond D_c = 2.163 has lambda_1 > 0.
+    spectra = map_I_lyapunov_scan(A, np.array([2.11, 2.19]), n_transient=20_000, n_iter=100_000)
+    assert abs(spectra[0, 0]) < 5e-4
+    assert spectra[1, 0] > 2e-3
+
+
 def test_coupled_logistic_shapes():
     state = np.array([0.2, -0.1], dtype=np.float64)
     out = coupled_logistic(state, A=1.2, D=0.08)

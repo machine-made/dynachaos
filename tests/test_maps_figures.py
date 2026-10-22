@@ -90,6 +90,7 @@ def test_torus_doubling_plot_map_I_writes_png(monkeypatch, tmp_path):
     monkeypatch.setattr(torus_doubling, "MAP1_PNG", png_path)
 
     payload = torus_doubling.compute_map_I(n_transient=2, n_plot=5, output_path=None)
+    assert "scan_D" not in payload
 
     torus_doubling.plot_map_I(payload)
 

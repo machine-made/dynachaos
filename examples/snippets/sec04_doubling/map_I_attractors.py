@@ -1,5 +1,6 @@
-# Figure: representative (X, Y) projections of Map (I) across torus doubling (alpha=0.4).
-# Full figure: dynachaos run sec04_doubling
+# Reduced preview (3 D values, 2000 points). Full figure: dynachaos run sec04_doubling
+# Torus doubling in Map (I), Eq. (8), at alpha = 0.4: 1x torus, 2x torus, and chaos (Dc = 2.163).
+# The static figure uses 10^5 iterates after a 20,000-step transient.
 import numpy as np
 
 from dynachaos.maps.torus_doubling import iterate_map, map_I
