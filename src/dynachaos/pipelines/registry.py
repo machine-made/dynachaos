@@ -391,7 +391,24 @@ SECTION_SPECS = {
         ),
         npz_contracts=(
             NpzContract("spacetime_diagrams.npz", ("A_eps_0.06", "B_eps_0.02", "C_eps_0.16")),
-            NpzContract("comoving_lyapunov.npz", ("v_values", "a_values", "eps", "N")),
+            NpzContract(
+                "comoving_lyapunov.npz",
+                (
+                    "v_values",
+                    "a_values",
+                    "eps",
+                    "N",
+                    "T",
+                    "w",
+                    "i0",
+                    "lambda_a1.70",
+                    "lambda_a1.85",
+                    "lambda_a1.95",
+                    "zc_a1.70",
+                    "zc_a1.85",
+                    "zc_a1.95",
+                ),
+            ),
             NpzContract("correlation_decay.npz", ("a_corr", "r_vals", "all_corr", "xi_values")),
         ),
         figures=(

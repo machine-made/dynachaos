@@ -427,9 +427,8 @@ def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_
 # ---------------------------------------------------------------------------
 # comoving_figure
 #
-# compute() propagates a two-copy Benettin scheme on an N=500 lattice across
-# 301 co-moving velocities, each with a 20000 step transient plus a 100000
-# step measurement (src/dynachaos/cml/comoving_figure.py:37-76) -- not
+# compute() runs the windowed estimator on an N = 3000 lattice for 51 velocities
+# and T = 1000 steps per a value (src/dynachaos/cml/comoving_figure.py) -- not
 # reachable at test scale. plot() and main()'s cache-miss branch are
 # exercised with a fast synthetic replacement for compute().
 # ---------------------------------------------------------------------------
@@ -442,25 +441,23 @@ def test_comoving_figure_plot_writes_png_and_marks_crossings(monkeypatch, tmp_pa
     monkeypatch.setattr(comoving_figure, "FIG_DIR", tmp_path)
     monkeypatch.setattr(comoving_figure, "OUTPUT_PNG", png_path)
 
-    v_values = np.linspace(-1.5, 1.5, 61)
-    a_values = np.array([1.70, 1.85])
-    lam_170 = -v_values * 0.2
-    # Below the -9.5 validity floor at the first two points, so the adjacent
-    # pair (invalid, valid) hits the "continue" skip when scanning for zero
-    # crossings (comoving_figure.py:132-134).
-    lam_170[:2] = -20.0
+    v_values = np.linspace(0.0, 1.0, 51)
+    a_values = np.array([1.70, 1.85, 1.95])
     data = {
         "v_values": v_values,
         "a_values": a_values,
-        # This curve vanishes exactly on the grid point v = 0, so the product
-        # of two neighbours is zero and the scan records no crossing.
-        "lambda_a1.70": lam_170,
-        # This one has its root at v = 0.05 / 0.3 = 1/6, between the grid
-        # points 0.15 and 0.20, so the scan does record a crossing.
-        "lambda_a1.85": -v_values * 0.3 + 0.05,
+        "eps": np.array([0.3]),
+        "N": np.array([3000]),
+        # Root at v = 0.1 / 0.4 = 0.25, between the grid points 0.24 and 0.26: a
+        # propagation speed (v > 0.2), so it is drawn and labelled.
+        "lambda_a1.70": -v_values * 0.4 + 0.1,
+        # Root at v = 0.5 / 1.25 = 0.4 on the grid: sign change with an exact zero.
+        "lambda_a1.85": -v_values * 1.25 + 0.5,
+        # Root at v = 0.1 < 0.2: a crossing near the origin is not a propagation speed.
+        "lambda_a1.95": -v_values * 1.0 + 0.1,
     }
 
-    # The crossing label is the only visible evidence that the scan ran, and
+    # The crossing labels are the only visible evidence that the scan ran, and
     # plot() closes the figure before returning. Record the text as it is drawn.
     labels: list[str] = []
     draw_text = Axes.text
@@ -474,10 +471,126 @@ def test_comoving_figure_plot_writes_png_and_marks_crossings(monkeypatch, tmp_pa
     comoving_figure.plot(data)
 
     assert png_path.stat().st_size > 0
-    # lambda is linear in v here, so the linear interpolation between the two
-    # neighbouring grid points must return the exact root 1/6 = 0.1667.
-    assert any(r"v_p(a=1.85) \approx 0.17" in label for label in labels)
-    assert not any("a=1.70" in label for label in labels)
+    # lambda is linear in v, so the linear interpolation between the two
+    # neighbouring grid points must return the exact roots.
+    assert any(r"v_p \approx 0.250" in label for label in labels)
+    assert any(r"v_p \approx 0.400" in label for label in labels)
+    assert not any(r"v_p \approx 0.100" in label for label in labels)
+    assert len(labels) == 2
+
+
+def test_comoving_windowed_matches_single_site_decay_without_coupling():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # eps = 0: sites do not interact.  For a = 0.5 every site converges to the fixed point
+    # x* = (-1 + sqrt(1 + 4 a)) / (2 a), where f'(x*) = -2 a x*.  A window that stays on
+    # the same sites (v = 0) then shrinks by exactly |f'(x*)| per step.
+    a = 0.5
+    x_star = (-1.0 + np.sqrt(1.0 + 4.0 * a)) / (2.0 * a)
+    lam = comoving_lyapunov_windowed_logistic(
+        a=a, eps=0.0, N=200, T=50, v_values=[0.0, 0.5, 1.0], n_transient=2000, w=5, i0=60
+    )
+
+    assert lam[0] == pytest.approx(np.log(2.0 * a * x_star), abs=1e-9)
+    # A window that moves away from the perturbation loses its support: the faster the
+    # window moves, the lower lambda(v).
+    assert lam[1] < lam[0] - 0.05
+    assert lam[2] < lam[1]
+
+
+def test_comoving_windowed_returns_floor_when_perturbation_vanishes():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # a = 0 gives f' = 0, so the perturbation is annihilated at every step.
+    lam = comoving_lyapunov_windowed_logistic(
+        a=0.0, eps=0.3, N=100, T=20, v_values=[0.0], n_transient=10, w=3, i0=40
+    )
+
+    assert lam[0] == -20.0
+
+
+def test_comoving_windowed_is_deterministic_and_seed_dependent():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    kwargs = {
+        "a": 1.95,
+        "eps": 0.3,
+        "N": 120,
+        "T": 40,
+        "v_values": [0.0, 0.3],
+        "n_transient": 200,
+        "w": 4,
+        "i0": 30,
+    }
+
+    first = comoving_lyapunov_windowed_logistic(**kwargs, seed=7)
+    again = comoving_lyapunov_windowed_logistic(**kwargs, seed=7)
+    other = comoving_lyapunov_windowed_logistic(**kwargs, seed=8)
+
+    np.testing.assert_array_equal(first, again)
+    assert not np.allclose(first, other)
+
+
+def test_comoving_windowed_rejects_windows_that_wrap_the_periodic_lattice():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # Right edge: i0 + T + w = 100 + 50 + 5 = 155 >= N.
+    with pytest.raises(ValueError, match="outside"):
+        comoving_lyapunov_windowed_logistic(
+            a=1.9, eps=0.3, N=150, T=50, v_values=[0.0, 1.0], n_transient=5, w=5, i0=100
+        )
+    # Left edge: a negative velocity moves the window below site 0.
+    with pytest.raises(ValueError, match="outside"):
+        comoving_lyapunov_windowed_logistic(
+            a=1.9, eps=0.3, N=500, T=50, v_values=[-1.0], n_transient=5, w=5, i0=20
+        )
+
+
+def test_comoving_zero_crossings_interpolate_between_grid_points():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
+
+    v = np.linspace(0.0, 1.0, 11)
+
+    # Linear lambda with its root at v = 0.25, between the grid points 0.2 and 0.3.
+    assert comoving_zero_crossings(v, 0.5 - 2.0 * v) == pytest.approx([0.25])
+    # A root exactly on a grid point is reported once.
+    assert comoving_zero_crossings(v, 0.5 - v) == pytest.approx([0.5])
+    # Several crossings, no crossing.
+    assert len(comoving_zero_crossings(v, np.cos(3.0 * np.pi * v))) == 3
+    assert comoving_zero_crossings(v, np.ones_like(v)) == []
+
+
+def test_sec08_comoving_cache_shows_convective_instability_and_wide_window():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
+
+    with np.load("figures/sec08_sti/comoving_lyapunov.npz", allow_pickle=False) as data:
+        v = data["v_values"]
+        a_values = data["a_values"]
+        N, T, w, i0 = (int(data[key][0]) for key in ("N", "T", "w", "i0"))
+        lam = {a: data[f"lambda_a{a:.2f}"] for a in (1.70, 1.85, 1.95)}
+        stored = {a: data[f"zc_a{a:.2f}"] for a in (1.70, 1.85, 1.95)}
+
+    np.testing.assert_allclose(a_values, [1.70, 1.85, 1.95])
+    np.testing.assert_allclose(v, np.linspace(0.0, 1.0, 51))
+    # The moving window never reaches the lattice boundary: no wrap-around.
+    assert i0 - w >= 0
+    assert i0 + int(np.floor(v.max() * T)) + w < N
+    for a in lam:
+        assert lam[a].shape == (51,)
+        assert np.all(np.isfinite(lam[a]))
+        np.testing.assert_allclose(stored[a], comoving_zero_crossings(v, lam[a]), rtol=1e-12)
+
+    # Defect and fully developed turbulence: lambda(0) > 0, lambda(1) < -1, and one
+    # propagation speed v_p, larger for the more turbulent state.
+    for a in (1.85, 1.95):
+        assert lam[a][0] > 0.25
+        assert lam[a][-1] < -1.0
+        assert stored[a].size == 1
+        assert 0.4 < stored[a][0] < 0.55
+    assert stored[1.95][0] > stored[1.85][0]
+    # Pattern selection: weaker local growth and an oscillating lambda(v) near the origin.
+    assert 0.0 < lam[1.70][0] < 0.1
+    assert stored[1.70].size >= 2
 
 
 def test_comoving_figure_main_computes_when_cache_missing(monkeypatch, tmp_path):

@@ -16,6 +16,14 @@ Positive lambda(v) for all v indicates absolute instability (fully
 developed turbulence), while lambda(v) < 0 for large |v| but > 0 near
 v = 0 indicates convective instability.
 
+Two estimators are provided.  ``comoving_lyapunov_spectrum`` samples the
+perturbation at the single co-moving site (a pointwise ray).
+``comoving_lyapunov_windowed_logistic`` follows the windowed definition of
+Kaneko (1986) and Deissler & Kaneko (1987): the growth rate of the perturbation
+norm summed over a window of 2 w + 1 sites that moves with the velocity v, with
+a renormalisation at every step.  The window never wraps around the periodic
+domain; the call raises ``ValueError`` if it would.
+
 Usage
 -----
 ::
@@ -237,6 +245,99 @@ def _comoving_lyapunov_spectrum_python(f, df, g, dg, eps, x_init, v_values, n_it
             _print_one_progress(v, lambda_v[iv], iv, n_vel)
 
     return lambda_v
+
+
+def comoving_lyapunov_windowed_logistic(
+    *,
+    a,
+    eps,
+    N,
+    T,
+    v_values,
+    n_transient=2000,
+    w=15,
+    i0=500,
+    seed=42,
+):
+    """Windowed co-moving Lyapunov exponent lambda(v) of a logistic CML.
+
+    The perturbation starts uniform on the window [i0 - w, i0 + w].  At step n
+    it is propagated one linearised CML step, its norm is taken over the window
+    [i_n - w, i_n + w] centred on i_n = i0 + floor(v (n + 1)), the log of that
+    norm is accumulated, and the perturbation is restricted to the window and
+    renormalised.  ``lambda(v)`` is the accumulated log divided by ``T``.  The
+    background is ``T`` steps of the CML after ``n_transient`` steps from an
+    initial state drawn uniformly on [-1, 1] with ``np.random.default_rng(seed)``.
+
+    Raises ``ValueError`` when any window would leave [0, N), which would make
+    the periodic domain wrap the window around.
+    """
+    from dynachaos.cml.primitives import cml_step_logistic
+
+    v_values = np.asarray(v_values, dtype=np.float64)
+    lowest = i0 - w + min(0, int(np.floor(v_values.min() * T)))
+    highest = i0 + w + max(0, int(np.floor(v_values.max() * T)))
+    if lowest < 0 or highest >= N:
+        raise ValueError(
+            f"co-moving window spans sites {lowest}..{highest}, outside [0, {N}); "
+            "increase N or reduce T, |v| or w"
+        )
+
+    rng = np.random.default_rng(seed)
+    x = rng.uniform(-1, 1, N)
+    for _ in range(n_transient):
+        x = cml_step_logistic(x, a, eps)
+
+    # Background trajectory, shared by every velocity.
+    traj = [x.copy()]
+    for _ in range(T):
+        x = cml_step_logistic(x, a, eps)
+        traj.append(x.copy())
+
+    lambda_v = []
+    for v in v_values:
+        dx = np.zeros(N, dtype=np.float64)
+        dx[i0 - w : i0 + w + 1] = 1.0 / np.sqrt(2 * w + 1)
+        log_sum = 0.0
+
+        for n in range(T):
+            x_curr = traj[n]
+            df = -2.0 * a * x_curr
+            dx_mid = df * dx
+            dx_next = (1.0 - eps) * dx_mid + 0.5 * eps * (np.roll(dx_mid, -1) + np.roll(dx_mid, 1))
+
+            centre = i0 + int(np.floor(v * (n + 1)))
+            win_slice = slice(centre - w, centre + w + 1)
+            norm_win = np.sqrt(np.sum(dx_next[win_slice] ** 2))
+
+            dx = np.zeros(N, dtype=np.float64)
+            if norm_win > 0 and np.isfinite(norm_win):
+                log_sum += np.log(norm_win)
+                dx[win_slice] = dx_next[win_slice] / norm_win
+            else:
+                # Perturbation lost: restart it uniformly on the window.
+                log_sum += -20.0
+                dx[win_slice] = 1.0 / np.sqrt(2 * w + 1)
+
+        lambda_v.append(log_sum / T)
+
+    return np.asarray(lambda_v, dtype=np.float64)
+
+
+def comoving_zero_crossings(v_values, lambda_values):
+    """Zero crossings of lambda(v), by linear interpolation between grid points.
+
+    A crossing is a sign change between neighbours (a value that is exactly
+    zero counts as non-positive on the lower side).
+    """
+    crossings = []
+    for k in range(len(lambda_values) - 1):
+        lo, hi = lambda_values[k], lambda_values[k + 1]
+        if (lo > 0 and hi <= 0) or (lo < 0 and hi >= 0):
+            crossings.append(
+                float(v_values[k] + (0.0 - lo) * (v_values[k + 1] - v_values[k]) / (hi - lo))
+            )
+    return crossings
 
 
 def _print_progress(v_values, lambda_v):
