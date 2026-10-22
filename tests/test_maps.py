@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from dynachaos.cml.correlation_figure import _fit_correlation_length
+from dynachaos.cml.correlation_figure import fit_correlation_length
 from dynachaos.cml.gcm_clusters import broad_positive_mask, compute_clusters, compute_collective
 from dynachaos.cml.pattern_dynamics import SPACE_CASES
 from dynachaos.cml.primitives import (
@@ -1297,14 +1297,14 @@ def test_cml_jacobian_subblock_logistic_matches_manual_matrix():
     np.testing.assert_allclose(J, expected)
 
 
-def test_correlation_length_fit_uses_decay_head_not_noise_floor():
-    r = np.arange(0, 80)
-    corr = np.exp(-r / 2.0)
-    corr[6:] = 2e-3 * (1.0 + 0.1 * np.sin(r[6:]))
+def test_correlation_length_fit_recovers_exponential_decay():
+    r = np.arange(0, 40)
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert 1.0 < xi < 3.0
+    # exp(-r / 3) is exactly 1/e at r = 3, a grid point.
+    assert fit_correlation_length(r, np.exp(-r / 3.0)) == pytest.approx(3.0, abs=1e-12)
+    # Between grid points the linear interpolation of a convex decay overestimates
+    # xi by under 3 %.
+    assert fit_correlation_length(r, np.exp(-r / 2.5)) == pytest.approx(2.5, rel=0.03)
 
 
 def test_correlation_length_fit_ignores_late_tail_spikes():
@@ -1312,60 +1312,84 @@ def test_correlation_length_fit_ignores_late_tail_spikes():
     corr = np.exp(-r / 0.8)
     corr[10] = 0.5
 
-    xi = _fit_correlation_length(r, corr)
+    xi = fit_correlation_length(r, corr)
 
     assert 0.5 < xi < 1.0
 
 
-def test_correlation_length_fit_uses_slow_head_slope_when_target_not_reached():
-    # Decay so slow the target e^-1 is never reached within the near-field
-    # window, so the loop runs to the array end and falls to the fitted-slope
-    # branch instead of the crossing-interpolation branch.
+def test_correlation_length_fit_uses_absolute_value_of_oscillating_correlation():
+    # |C| falls to 1/e between r = 1 and r = 2 even though C itself is negative there.
+    r = np.arange(0, 10)
+    corr = np.array([1.0, 0.6, -0.2, 0.5, -0.4, 0.1, 0.0, 0.0, 0.0, 0.0])
+
+    xi = fit_correlation_length(r, corr)
+
+    expected = 1.0 + (np.exp(-1.0) - 0.6) / (0.2 - 0.6)
+    assert xi == pytest.approx(expected)
+
+
+def test_correlation_length_fit_is_nan_when_target_is_never_reached():
     r = np.arange(0, 30)
-    corr = np.exp(-r / 50.0)
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert 45.0 < xi < 55.0
+    assert np.isnan(fit_correlation_length(r, np.exp(-r / 50.0)))
 
 
 def test_correlation_length_fit_returns_plateau_value_without_interpolation():
     # A flat plateau exactly at the target value: the crossing branch fires
     # with y0 == y1, so no interpolation is needed and x1 is returned as-is.
     r = np.arange(0, 20)
-    target = np.exp(-1.0)
-    corr = np.full(20, target)
+    corr = np.full(20, np.exp(-1.0))
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert xi == pytest.approx(1.0)
+    assert fit_correlation_length(r, corr) == pytest.approx(1.0)
 
 
-def test_correlation_length_fit_uses_envelope_crossing_for_oscillatory_head():
-    # An oscillating head (rises above its previous value repeatedly, so the
-    # scan loop exits early on the "value > previous" condition well before
-    # the target or noise floor) falls through to the envelope-crossing
-    # fallback.
-    r = np.arange(0, 20)
-    corr = np.array([1.0, 0.9, 1.0, 0.9, 1.0, 0.9] + [0.1] * 14)
-
-    xi = _fit_correlation_length(r, corr)
-
-    assert np.isfinite(xi)
-    assert xi > 0.0
-
-
-def test_sec08_correlation_lengths_are_physical_after_refit():
+def test_sec08_correlation_cache_lengths_and_long_range_order():
     with np.load("figures/sec08_sti/correlation_decay.npz", allow_pickle=False) as data:
         a_corr = data["a_corr"]
+        r_vals = data["r_vals"]
+        all_corr = data["all_corr"]
         xi_values = data["xi_values"]
 
-    xi_by_a = dict(zip(a_corr, xi_values, strict=True))
+    np.testing.assert_allclose(a_corr, [1.50, 1.70, 1.85, 1.95])
+    np.testing.assert_allclose(all_corr[:, 0], 1.0)
+    assert r_vals.shape == (101,)
 
-    assert np.all(np.isfinite(xi_values))
-    assert np.all((0.0 < xi_values) & (xi_values < 10.0))
-    assert xi_by_a[1.85] < xi_by_a[1.7]
-    assert xi_by_a[1.95] < xi_by_a[1.7]
+    # The stored xi is the first 1/e crossing of |C(r)|/C(0), recomputed here.
+    expected = [fit_correlation_length(r_vals, c) for c in all_corr]
+    np.testing.assert_allclose(xi_values, expected, rtol=1e-12)
+    assert np.all((0.5 < xi_values) & (xi_values < 3.0))
+    for xi, corr in zip(xi_values, np.abs(all_corr), strict=True):
+        below = int(np.floor(xi))
+        assert np.all(corr[: below + 1] > np.exp(-1.0))
+        assert corr[below + 1] <= np.exp(-1.0)
+
+    # Pattern selection (a = 1.70) keeps oscillating long-range order that the first
+    # fall below 1/e does not capture; the other three states decorrelate.
+    far = np.abs(all_corr[:, 10:]).max(axis=1)
+    assert far[1] > 0.3
+    assert np.all(far[[0, 2, 3]] < 0.05)
+
+
+def test_sec08_ks_entropy_density_is_extensive_in_chaotic_states():
+    with np.load("figures/sec08_sti/correlation_decay.npz", allow_pickle=False) as data:
+        a_lyap = data["a_lyap"]
+        L_vals = data["L_vals"]
+        h_density = data["h_density"]
+
+    np.testing.assert_allclose(a_lyap, [1.50, 1.70, 1.85, 1.95])
+    np.testing.assert_array_equal(L_vals, [10, 20, 30, 40, 60, 80, 100])
+    assert h_density.shape == (4, 7)
+    assert np.all(np.isfinite(h_density))
+    assert np.all(h_density >= 0.0)
+
+    # Defect and fully developed turbulence: h_KS(L)/L is flat in L (extensive).
+    for row in (h_density[2], h_density[3]):
+        plateau = row[1:]
+        assert np.ptp(plateau) / np.mean(plateau) < 0.10
+    # Pattern selection loses its entropy density as the subsystem grows.
+    assert h_density[1, -1] < 0.5 * h_density[1, 0]
+    # More chaotic states carry more entropy per site at the largest subsystem.
+    assert h_density[3, -1] > h_density[2, -1] > h_density[0, -1] > h_density[1, -1]
 
 
 def test_gcm_step_matches_manual_formula():

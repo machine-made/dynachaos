@@ -409,7 +409,10 @@ SECTION_SPECS = {
                     "zc_a1.95",
                 ),
             ),
-            NpzContract("correlation_decay.npz", ("a_corr", "r_vals", "all_corr", "xi_values")),
+            NpzContract(
+                "correlation_decay.npz",
+                ("a_corr", "r_vals", "all_corr", "xi_values", "a_lyap", "L_vals", "h_density"),
+            ),
         ),
         figures=(
             FigureSpec(

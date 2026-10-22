@@ -301,11 +301,11 @@ def test_pattern_dynamics_main_recomputes_stale_space_cache(monkeypatch, tmp_pat
 # ---------------------------------------------------------------------------
 # correlation_figure
 #
-# compute_lyapunov_density() sweeps 4 a values x 8 subsystem sizes, each with
-# a 5000 step transient plus a 20000 step Jacobian-propagated measurement
-# (src/dynachaos/cml/correlation_figure.py:92-145). Measured at ~9.4s for the
-# real parameters, over the per-test 5s budget, so it is left uncovered; the
-# lighter compute_correlations() (~0.7s) is exercised directly instead.
+# compute_ks_entropy_density() sweeps 4 a values x 7 subsystem sizes with a QR
+# propagation of up to 100 exponents over 2000 steps each
+# (src/dynachaos/cml/correlation_figure.py), far over the per-test 5s budget,
+# so it is exercised on a tiny lattice below; the lighter
+# compute_correlations() (~0.7s) is exercised directly with its real parameters.
 # ---------------------------------------------------------------------------
 
 
@@ -318,25 +318,38 @@ def test_correlation_figure_compute_correlations_normalizes_to_one_at_zero_lag()
     assert np.all(np.isfinite(all_corr))
 
 
+def test_correlation_figure_ks_entropy_density_vanishes_without_chaos_and_is_positive_with_it():
+    a_values, L_values, density = correlation_figure.compute_ks_entropy_density(
+        N=24, a_values=(0.5, 1.95), L_values=(4, 8), n_transient=300, n_iter=400
+    )
+
+    np.testing.assert_allclose(a_values, [0.5, 1.95])
+    np.testing.assert_array_equal(L_values, [4, 8])
+    assert density.shape == (2, 2)
+    # a = 0.5 is a contracting fixed point: every exponent is negative, so h_KS = 0.
+    np.testing.assert_array_equal(density[0], 0.0)
+    assert np.all(density[1] > 0.02)
+
+
 def test_correlation_figure_compute_combines_correlations_and_fits_xi(monkeypatch, tmp_path):
     npz_path = tmp_path / "correlation_decay.npz"
     monkeypatch.setattr(correlation_figure, "FIG_DIR", tmp_path)
     monkeypatch.setattr(correlation_figure, "CORR_NPZ", npz_path)
 
-    def fake_lyapunov_density():
+    def fake_ks_entropy_density():
         a_values = np.array([1.5, 1.7, 1.85, 1.95])
         L_values = np.array([10, 20])
-        density = np.full((4, 2), 0.01)
-        return a_values, L_values, density
+        h_density = np.full((4, 2), 0.01)
+        return a_values, L_values, h_density
 
-    monkeypatch.setattr(correlation_figure, "compute_lyapunov_density", fake_lyapunov_density)
+    monkeypatch.setattr(correlation_figure, "compute_ks_entropy_density", fake_ks_entropy_density)
 
     correlation_figure.compute()
 
     with np.load(npz_path) as data:
         assert data["all_corr"].shape[0] == 4
         assert data["xi_values"].shape == (4,)
-        assert data["density"].shape == (4, 2)
+        assert data["h_density"].shape == (4, 2)
 
 
 def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
@@ -349,7 +362,7 @@ def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
     xi_values = np.array([2.0, 4.0, 8.0, np.nan])
     a_lyap = a_corr
     L_vals = np.array([10, 20, 40])
-    density = np.tile(np.linspace(0.1, 0.05, 3), (4, 1))
+    h_density = np.tile(np.linspace(0.1, 0.05, 3), (4, 1))
 
     data = {
         "a_corr": a_corr,
@@ -358,7 +371,7 @@ def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
         "xi_values": xi_values,
         "a_lyap": a_lyap,
         "L_vals": L_vals,
-        "density": density,
+        "h_density": h_density,
     }
 
     correlation_figure.plot(data)
@@ -385,7 +398,7 @@ def test_correlation_figure_main_computes_when_cache_missing(monkeypatch, tmp_pa
             xi_values=np.array([2.0, 3.0]),
             a_lyap=a_vals,
             L_vals=np.array([10, 20]),
-            density=np.full((2, 2), 0.01),
+            h_density=np.full((2, 2), 0.01),
         )
 
     monkeypatch.setattr(correlation_figure, "compute", fake_compute)
@@ -414,7 +427,7 @@ def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_
         xi_values=np.array([2.0, 3.0]),
         a_lyap=a_vals,
         L_vals=np.array([10, 20]),
-        density=np.full((2, 2), 0.01),
+        h_density=np.full((2, 2), 0.01),
     )
 
     # The cache already exists, so main() takes the "Loaded" branch
