@@ -709,6 +709,14 @@ def test_ledger_records_child_rss_not_orchestrator(tmp_path, monkeypatch):
         basin=[0],
         A=[1.0],
         D=[0.1],
+        x_zoom1=[0.5],
+        y_zoom1=[0.5],
+        basin_zoom1=[0],
+        rect_zoom1=[0.0, 1.0, 0.0, 1.0],
+        x_zoom2=[0.5],
+        y_zoom2=[0.5],
+        basin_zoom2=[0],
+        rect_zoom2=[0.0, 1.0, 0.0, 1.0],
     )
     for png in ("phase_diagram.png", "attractors.png", "basins.png"):
         (section_dir / png).write_bytes(b"png")

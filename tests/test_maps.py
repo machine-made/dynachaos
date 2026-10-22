@@ -172,6 +172,49 @@ def test_sec02_k_inf_cache_brackets_the_one_fifth_lock_onset():
     assert rotation_number(k_inf - 1e-4, n_transient=5000, n_iter=50_000) - 0.2 > 5e-4
 
 
+def test_sec03_basin_cache_is_mirror_symmetric_with_nested_stripes():
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec03_transition"
+    with np.load(figure_dir / "basins.npz", allow_pickle=False) as data:
+        windows = {
+            suffix: (data[f"x{suffix}"], data[f"y{suffix}"], data[f"basin{suffix}"])
+            for suffix in ("", "_zoom1", "_zoom2")
+        }
+        rects = [data["rect_zoom1"], data["rect_zoom2"]]
+        A = float(data["A"][0])
+        D = float(data["D"][0])
+
+    assert A == pytest.approx(1.35344)
+    assert D == pytest.approx(0.1)
+    for (x, y, basin), (n_expected) in zip(windows.values(), (800, 500, 500), strict=True):
+        assert basin.shape == (n_expected, n_expected)
+        assert x.size == y.size == n_expected
+        # No orbit diverges at this (A, D) and both asymmetric cycles are reached.
+        assert not np.any(basin == -1)
+        assert {1, 2} <= set(np.unique(basin).tolist())
+        # Label 0 (equidistant from both cycles) marks exactly the grid cells on y = x.
+        on_diagonal = np.abs(x[None, :] - y[:, None]) < 1e-12
+        assert np.array_equal(basin == 0, on_diagonal)
+
+    # The two period-32 cycles are mirror images about y = x, so swapping the
+    # initial coordinates must swap the labels 1 and 2 on every symmetric window.
+    for suffix in ("", "_zoom2"):
+        basin = windows[suffix][2]
+        swapped = np.where(basin == 1, 2, np.where(basin == 2, 1, basin))
+        assert np.array_equal(basin.T, swapped)
+    assert (windows[""][2] == 1).sum() == (windows[""][2] == 2).sum()
+
+    # The zoom windows are the boxes drawn on the panels, and the stripes persist at
+    # the second magnification: many label changes along a row through the box.
+    assert rects[0] == pytest.approx([-0.16, 0.04, -0.11, 0.09])
+    assert rects[1] == pytest.approx([-0.07, -0.03, -0.07, -0.03])
+    assert windows["_zoom1"][0][[0, -1]] == pytest.approx(rects[0][:2])
+    assert windows["_zoom2"][1][[0, -1]] == pytest.approx(rects[1][2:])
+    for suffix, minimum_changes in (("_zoom1", 20), ("_zoom2", 10)):
+        basin = windows[suffix][2]
+        changes = np.count_nonzero(np.diff(basin[basin.shape[0] // 2]) != 0)
+        assert changes >= minimum_changes
+
+
 def test_coupled_logistic_shapes():
     state = np.array([0.2, -0.1], dtype=np.float64)
     out = coupled_logistic(state, A=1.2, D=0.08)

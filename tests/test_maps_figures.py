@@ -167,6 +167,8 @@ def test_coupled_logistic_plot_basins_writes_png_and_marks_divergence(monkeypatc
         n_transient=2,
         reference_transient=2,
         period=2,
+        zoom_windows=coupled_logistic.BASIN_ZOOMS,
+        n_grid_zoom=6,
         output_path=None,
     )
     # Force at least one diverged cell so the "Diverged" legend-patch branch

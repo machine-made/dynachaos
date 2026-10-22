@@ -144,7 +144,24 @@ SECTION_SPECS = {
                     "schema_version",
                 ),
             ),
-            NpzContract("basins.npz", ("x", "y", "basin", "A", "D")),
+            NpzContract(
+                "basins.npz",
+                (
+                    "x",
+                    "y",
+                    "basin",
+                    "A",
+                    "D",
+                    "x_zoom1",
+                    "y_zoom1",
+                    "basin_zoom1",
+                    "rect_zoom1",
+                    "x_zoom2",
+                    "y_zoom2",
+                    "basin_zoom2",
+                    "rect_zoom2",
+                ),
+            ),
         ),
         figures=(
             FigureSpec(
