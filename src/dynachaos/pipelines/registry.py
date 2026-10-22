@@ -469,11 +469,13 @@ SECTION_SPECS = {
         modules=(
             "dynachaos.cml.globally_coupled",
             "dynachaos.cml.gcm_clusters",
+            "dynachaos.cml.gcm_lyapunov_max",
         ),
         cache_files=(
             "gcm_results.npz",
             "gcm_msd.npz",
             "gcm_clusters.npz",
+            "gcm_lyapunov_max.npz",
         ),
         output_files=(
             "gcm_results.npz",
@@ -482,6 +484,8 @@ SECTION_SPECS = {
             "gcm_distribution.png",
             "gcm_clusters.npz",
             "gcm_clusters.png",
+            "gcm_lyapunov_max.npz",
+            "gcm_lyapunov_max.png",
         ),
         npz_contracts=(
             NpzContract("gcm_results.npz", ("N_values", "a", "eps")),
@@ -503,6 +507,27 @@ SECTION_SPECS = {
                 ),
             ),
             NpzContract("gcm_clusters.npz", ("cluster_labels", "x_record", "a", "eps", "N")),
+            NpzContract(
+                "gcm_lyapunov_max.npz",
+                (
+                    "a_values",
+                    "N_values",
+                    "eps",
+                    "n_seeds",
+                    "n_transient",
+                    "n_measure",
+                    "seed_base",
+                    "runs_500",
+                    "runs_1000",
+                    "runs_2000",
+                    "mean_500",
+                    "mean_1000",
+                    "mean_2000",
+                    "se_500",
+                    "se_1000",
+                    "se_2000",
+                ),
+            ),
         ),
         figures=(
             FigureSpec(
@@ -522,6 +547,12 @@ SECTION_SPECS = {
                 "gcm_clusters.npz",
                 "dynachaos.cml.gcm_clusters",
                 "examples/snippets/sec10_gcm/gcm_clusters.py",
+            ),
+            FigureSpec(
+                "gcm_lyapunov_max.png",
+                "gcm_lyapunov_max.npz",
+                "dynachaos.cml.gcm_lyapunov_max",
+                "examples/snippets/sec10_gcm/gcm_lyapunov_max.py",
             ),
         ),
     ),

@@ -113,6 +113,10 @@ CAPTIONS: dict[str, str] = {
     "sec10_gcm/gcm_clusters.png": (
         "Cluster states in a globally coupled map, showing a partially ordered regime."
     ),
+    "sec10_gcm/gcm_lyapunov_max.png": (
+        "Largest Lyapunov exponent of the site dynamics of a globally coupled map against the "
+        "nonlinearity, for three system sizes."
+    ),
     "sec11_diagnostics/test01_sweep.png": (
         "The 0-1 test statistic for the logistic map, near 0 in periodic windows and near 1 "
         "in chaotic bands."

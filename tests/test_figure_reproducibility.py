@@ -16,7 +16,6 @@ FAST_REPRODUCIBILITY_SECTIONS = (
     "sec03_transition",
     "sec08_sti",
     "sec09_pattern",
-    "sec10_gcm",
     "sec11_diagnostics",
 )
 HEAVY_REPRODUCIBILITY_SECTIONS = (
@@ -25,6 +24,8 @@ HEAVY_REPRODUCIBILITY_SECTIONS = (
     "sec05_oscillation",
     "sec06_three_torus",
     "sec07_fractalization",
+    # gcm_lyapunov_max runs 2400 tangent-map integrations of 11000 steps (about 4 min).
+    "sec10_gcm",
 )
 
 
