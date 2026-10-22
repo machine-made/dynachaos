@@ -114,6 +114,13 @@ def test_smoke_profile_accepts_valid_cached_outputs_without_recomputation(tmp_pa
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -139,6 +146,13 @@ def test_run_section_writes_opt_in_timing_ledger(tmp_path, monkeypatch):
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -182,6 +196,13 @@ def test_run_section_timing_ledger_can_come_from_env(tmp_path, monkeypatch):
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -205,6 +226,13 @@ def test_run_section_without_timing_ledger_does_not_touch_timer(tmp_path, monkey
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -224,6 +252,13 @@ def test_section_validators_can_check_cache_and_outputs_without_running_modules(
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -242,6 +277,13 @@ def test_section_cache_validator_rejects_malformed_npz(tmp_path):
     (section_dir / "devils_staircase.npz").write_bytes(b"not a valid npz archive")
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
 
     with pytest.raises(RuntimeError, match="malformed NPZ artifact"):
         validate_section_cache("sec02_circle_map", output_root=tmp_path)
@@ -269,6 +311,13 @@ def test_inspect_section_artifacts_reports_cache_and_output_roles(tmp_path):
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
         (section_dir / png_name).write_bytes(b"png")
 
@@ -285,6 +334,13 @@ def test_section_output_validator_rejects_empty_figure(tmp_path):
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     (section_dir / "devils_staircase.png").write_bytes(b"")
     (section_dir / "arnold_tongues.png").write_bytes(b"png")
     (section_dir / "staircase_zoom.png").write_bytes(b"png")
@@ -564,6 +620,13 @@ def test_run_section_recompute_deletes_existing_outputs_before_running(tmp_path,
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     stale_png = section_dir / "devils_staircase.png"
     stale_png.write_bytes(b"stale")
 

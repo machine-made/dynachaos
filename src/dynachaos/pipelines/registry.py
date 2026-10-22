@@ -76,7 +76,12 @@ SECTION_SPECS = {
     "sec02_circle_map": SectionSpec(
         section_id="sec02_circle_map",
         modules=("dynachaos.maps.circle_map", "dynachaos.maps.arnold_tongues"),
-        cache_files=("devils_staircase.npz", "arnold_tongues.npz", "staircase_zoom.npz"),
+        cache_files=(
+            "devils_staircase.npz",
+            "arnold_tongues.npz",
+            "staircase_zoom.npz",
+            "k_inf.npz",
+        ),
         output_files=(
             "devils_staircase.npz",
             "devils_staircase.png",
@@ -84,11 +89,13 @@ SECTION_SPECS = {
             "arnold_tongues.png",
             "staircase_zoom.npz",
             "staircase_zoom.png",
+            "k_inf.npz",
         ),
         npz_contracts=(
             NpzContract("devils_staircase.npz", ("A", "rho", "lam")),
             NpzContract("arnold_tongues.npz", ("Omega", "K", "rho")),
             NpzContract("staircase_zoom.npz", ("A", "rho")),
+            NpzContract("k_inf.npz", ("K_inf", "uncertainty", "k_low_final", "k_high_final")),
         ),
         figures=(
             FigureSpec(

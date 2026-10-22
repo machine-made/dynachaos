@@ -138,6 +138,40 @@ def test_sec02_circle_map_cache_preserves_decreasing_staircase_and_tongues():
     assert zero_lock_counts[-1] > zero_lock_counts[0]
 
 
+def test_sec02_k_inf_cache_brackets_the_one_fifth_lock_onset():
+    from dynachaos.maps.circle_map import is_locked, rotation_number
+
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec02_circle_map"
+    with np.load(figure_dir / "k_inf.npz", allow_pickle=False) as data:
+        k_inf = float(data["K_inf"][0])
+        uncertainty = float(data["uncertainty"][0])
+        k_low = float(data["k_low_final"][0])
+        k_high = float(data["k_high_final"][0])
+        k_low_init = float(data["k_low_init"][0])
+        k_high_init = float(data["k_high_init"][0])
+        omega = float(data["Omega"][0])
+
+    assert omega == pytest.approx(0.25)
+    assert k_low <= k_inf <= k_high
+    assert uncertainty == pytest.approx(0.5 * (k_high - k_low))
+    assert uncertainty < 1e-12
+    assert k_inf == pytest.approx(0.1567168, abs=1e-7)
+    assert k_low_init < k_inf < k_high_init
+
+    # The bracket is a true lock edge: locked on its upper end, free on its lower end.
+    assert is_locked(k_high, D=omega)
+    assert not is_locked(k_low, D=omega)
+    assert is_locked(k_inf + 1e-4, D=omega)
+    assert not is_locked(k_inf - 1e-4, D=omega)
+
+    # Inside the lock the rotation number is 1/5 to round-off; outside it is above 1/5
+    # and grows as the square root of the distance to the saddle-node onset.
+    assert rotation_number(k_inf + 1e-4, n_transient=5000, n_iter=50_000) == pytest.approx(
+        0.2, abs=1e-12
+    )
+    assert rotation_number(k_inf - 1e-4, n_transient=5000, n_iter=50_000) - 0.2 > 5e-4
+
+
 def test_coupled_logistic_shapes():
     state = np.array([0.2, -0.1], dtype=np.float64)
     out = coupled_logistic(state, A=1.2, D=0.08)
@@ -2046,7 +2080,7 @@ def test_circle_map_plot_tiny_devils_staircase(tmp_path):
     old_png = cm_module.OUTPUT_PNG
     cm_module.OUTPUT_PNG = output_png
     try:
-        cm_module.plot(data)
+        cm_module.plot(data, k_inf=0.1567168)
     finally:
         cm_module.OUTPUT_PNG = old_png
 

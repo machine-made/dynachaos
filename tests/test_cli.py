@@ -26,6 +26,13 @@ def _write_sec02_artifacts(output_root: Path, *, include_outputs: bool = True) -
     np.savez_compressed(section_dir / "devils_staircase.npz", A=[1.0], rho=[0.0], lam=[0.0])
     np.savez_compressed(section_dir / "arnold_tongues.npz", Omega=[0.0], K=[1.0], rho=[0.0])
     np.savez_compressed(section_dir / "staircase_zoom.npz", A=[1.0], rho=[0.0])
+    np.savez_compressed(
+        section_dir / "k_inf.npz",
+        K_inf=[0.15],
+        uncertainty=[0.0],
+        k_low_final=[0.15],
+        k_high_final=[0.15],
+    )
     if include_outputs:
         for png_name in ("devils_staircase.png", "arnold_tongues.png", "staircase_zoom.png"):
             (section_dir / png_name).write_bytes(b"png")
@@ -130,7 +137,7 @@ def test_cli_verify_caches_on_temp_output_root(tmp_path):
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert "[sec02_circle_map] 3 caches ok" in proc.stdout
+    assert "[sec02_circle_map] 4 caches ok" in proc.stdout
 
 
 def test_cli_verify_outputs_reports_missing_without_recomputing(tmp_path):

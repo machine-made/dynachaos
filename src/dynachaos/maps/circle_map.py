@@ -12,6 +12,7 @@ With D = 0.25 fixed and A as the bifurcation parameter.
 OUTPUTS:
   figures/sec02_circle_map/devils_staircase.npz
   figures/sec02_circle_map/devils_staircase.png
+  figures/sec02_circle_map/k_inf.npz
 
 USAGE:
   python src/dynachaos/maps/circle_map.py
@@ -29,6 +30,7 @@ OUTPUT_NPZ = FIG_DIR / "devils_staircase.npz"
 OUTPUT_PNG = FIG_DIR / "devils_staircase.png"
 ZOOM_NPZ = FIG_DIR / "staircase_zoom.npz"
 ZOOM_PNG = FIG_DIR / "staircase_zoom.png"
+K_INF_NPZ = FIG_DIR / "k_inf.npz"
 
 
 # ---------------------------------------------------------------------------
@@ -140,12 +142,116 @@ def compute():
 
 
 # ---------------------------------------------------------------------------
+# K_infty: onset of the 1/5 lock, by bisection on the lift
+# ---------------------------------------------------------------------------
+
+
+def _lift(theta, A, D):
+    """Circle-map lift F(theta) = theta + D + A sin(2 pi theta), without mod 1."""
+    return theta + D + A * np.sin(2.0 * np.pi * theta)
+
+
+def is_locked(A, D=0.25, q=5, n_transient=100_000, n_check=100, tol=1e-8, theta0=0.1):
+    """Return True when the orbit is p/q locked with p = 1: theta_{n+q} - theta_n = 1.
+
+    The test uses the unwrapped lift, so it separates the lock from a nearby
+    quasi-periodic orbit whose rotation number differs by less than ``tol``.
+    """
+    theta = theta0
+    for _ in range(n_transient):
+        theta = _lift(theta, A, D)
+    for _ in range(n_check):
+        th_next = theta
+        for _ in range(q):
+            th_next = _lift(th_next, A, D)
+        if abs(th_next - theta - 1.0) >= tol:
+            return False
+        theta = _lift(theta, A, D)
+    return True
+
+
+def bisect_k_inf(
+    D=0.25,
+    q=5,
+    k_low=0.1560,
+    k_high=0.1570,
+    n_steps=50,
+    n_transient=100_000,
+    n_check=100,
+    tol=1e-8,
+    theta0=0.1,
+):
+    """Bisect for K_infty, the smallest K at which the 1/q lock holds.
+
+    ``k_low`` must be unlocked and ``k_high`` locked.  Returns
+    ``(k_inf, low, high)``; the half-width of ``[low, high]`` is the uncertainty.
+    """
+    low = float(k_low)
+    high = float(k_high)
+    for _ in range(n_steps):
+        mid = 0.5 * (low + high)
+        if is_locked(
+            mid, D=D, q=q, n_transient=n_transient, n_check=n_check, tol=tol, theta0=theta0
+        ):
+            high = mid
+        else:
+            low = mid
+    return 0.5 * (low + high), low, high
+
+
+def compute_k_inf(
+    D=0.25,
+    q=5,
+    k_low=0.1560,
+    k_high=0.1570,
+    n_steps=50,
+    n_transient=100_000,
+    n_check=100,
+    tol=1e-8,
+    theta0=0.1,
+):
+    """Find K_infty at D = 0.25 for the 1/5 tongue and save ``k_inf.npz``."""
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"  Finding K_infty at Omega={D} via bisection ({n_steps} steps)...")
+    k_inf, low, high = bisect_k_inf(
+        D=D,
+        q=q,
+        k_low=k_low,
+        k_high=k_high,
+        n_steps=n_steps,
+        n_transient=n_transient,
+        n_check=n_check,
+        tol=tol,
+        theta0=theta0,
+    )
+    uncertainty = 0.5 * (high - low)
+    print(f"  K_infty = {k_inf:.8f} +/- {uncertainty:.2e} (interval [{low:.10f}, {high:.10f}])")
+    payload = {
+        "K_inf": np.array([k_inf], dtype=np.float64),
+        "uncertainty": np.array([uncertainty], dtype=np.float64),
+        "k_low_final": np.array([low], dtype=np.float64),
+        "k_high_final": np.array([high], dtype=np.float64),
+        "Omega": np.array([D], dtype=np.float64),
+        "k_low_init": np.array([k_low], dtype=np.float64),
+        "k_high_init": np.array([k_high], dtype=np.float64),
+        "n_steps": np.array([n_steps], dtype=np.int64),
+        "n_transient": np.array([n_transient], dtype=np.int64),
+        "n_check": np.array([n_check], dtype=np.int64),
+        "tol": np.array([tol], dtype=np.float64),
+        "theta0": np.array([theta0], dtype=np.float64),
+    }
+    np.savez_compressed(K_INF_NPZ, **payload)
+    print(f"Saved {K_INF_NPZ}")
+    return payload
+
+
+# ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
 
 
-def plot(data):
-    """Create the devil's staircase with Lyapunov overlay."""
+def plot(data, k_inf):
+    """Create the devil's staircase with Lyapunov overlay; ``k_inf`` marks the 1/5 lock onset."""
     import matplotlib.pyplot as plt
 
     from dynachaos.utils.style import (
@@ -191,8 +297,8 @@ def plot(data):
     ax2.set_xlim(0, 0.25)
     panel_label(ax2, "(b)")
 
-    # Mark the onset of 1/5 locking and compute chaos onset live from cached data.
-    K_inf = 0.15671685
+    # Mark the onset of 1/5 locking (cached bisection) and compute chaos onset from the data.
+    K_inf = float(k_inf)
 
     # Compute chaos onset: first K where lam stays sustained above 5-sigma noise floor
     noise_floor = lam[A < 0.10].std() * 5
@@ -386,6 +492,14 @@ def plot_zoom(zoom_data, full_data):
 def main():
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    # K_infty by bisection on the lift
+    k_inf_data = load_or_compute_npz(
+        K_INF_NPZ,
+        "K_infty bisection",
+        compute_k_inf,
+        required_keys=("K_inf", "uncertainty"),
+    )
+
     # Devil's staircase
     data = load_or_compute_npz(
         OUTPUT_NPZ,
@@ -393,7 +507,7 @@ def main():
         compute,
         required_keys=("A", "rho", "lam"),
     )
-    plot(data)
+    plot(data, float(k_inf_data["K_inf"][0]))
 
     # Staircase zoom
     zoom_data = load_or_compute_npz(
