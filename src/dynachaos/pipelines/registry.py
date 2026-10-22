@@ -474,7 +474,6 @@ SECTION_SPECS = {
             "gcm_results.npz",
             "gcm_msd.npz",
             "gcm_clusters.npz",
-            "collective_lyapunov.npz",
         ),
         output_files=(
             "gcm_results.npz",
@@ -483,8 +482,6 @@ SECTION_SPECS = {
             "gcm_distribution.png",
             "gcm_clusters.npz",
             "gcm_clusters.png",
-            "collective_lyapunov.npz",
-            "collective_lyapunov.png",
         ),
         npz_contracts=(
             NpzContract("gcm_results.npz", ("N_values", "a", "eps")),
@@ -506,7 +503,6 @@ SECTION_SPECS = {
                 ),
             ),
             NpzContract("gcm_clusters.npz", ("cluster_labels", "x_record", "a", "eps", "N")),
-            NpzContract("collective_lyapunov.npz", ("a_values", "lyap_c", "eps", "N")),
         ),
         figures=(
             FigureSpec(
@@ -526,12 +522,6 @@ SECTION_SPECS = {
                 "gcm_clusters.npz",
                 "dynachaos.cml.gcm_clusters",
                 "examples/snippets/sec10_gcm/gcm_clusters.py",
-            ),
-            FigureSpec(
-                "collective_lyapunov.png",
-                "collective_lyapunov.npz",
-                "dynachaos.cml.gcm_clusters",
-                "examples/snippets/sec10_gcm/collective_lyapunov.py",
             ),
         ),
     ),

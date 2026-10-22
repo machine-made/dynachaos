@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from dynachaos.cml.correlation_figure import fit_correlation_length
-from dynachaos.cml.gcm_clusters import broad_positive_mask, compute_clusters, compute_collective
+from dynachaos.cml.gcm_clusters import compute_clusters
 from dynachaos.cml.pattern_dynamics import SPACE_CASES
 from dynachaos.cml.primitives import (
     cluster_labels_by_tolerance,
@@ -1058,10 +1058,10 @@ def test_longest_plateau_window_selects_widest_run():
     assert window == (0.4, 0.6)
 
 
-def test_broad_positive_mask_rejects_short_spikes():
+def test_sustained_positive_mask_rejects_short_spikes():
     values = np.array([-0.1, 0.03, -0.02, 0.04, 0.05, 0.06, 0.07, -0.01])
 
-    mask = broad_positive_mask(values, threshold=0.02, min_run=3)
+    mask = sustained_positive_mask(values, threshold=0.02, min_run=3)
 
     np.testing.assert_array_equal(
         mask,
@@ -1069,21 +1069,12 @@ def test_broad_positive_mask_rejects_short_spikes():
     )
 
 
-def test_broad_positive_mask_closes_a_run_that_reaches_the_array_end():
+def test_sustained_positive_mask_closes_a_run_that_reaches_the_array_end():
     values = np.array([-0.1, 0.03, 0.04, 0.05, 0.06])
 
-    mask = broad_positive_mask(values, threshold=0.02, min_run=3)
+    mask = sustained_positive_mask(values, threshold=0.02, min_run=3)
 
     np.testing.assert_array_equal(mask, np.array([False, True, True, True, True]))
-
-
-def test_sustained_positive_mask_matches_legacy_alias():
-    values = np.array([-0.1, 0.03, -0.02, 0.04, 0.05, 0.06, 0.07, -0.01])
-
-    np.testing.assert_array_equal(
-        sustained_positive_mask(values, threshold=0.02, min_run=3),
-        broad_positive_mask(values, threshold=0.02, min_run=3),
-    )
 
 
 def test_compute_clusters_returns_and_writes_explicit_payload(tmp_path):
@@ -1106,31 +1097,6 @@ def test_compute_clusters_returns_and_writes_explicit_payload(tmp_path):
         assert set(saved.files) == set(payload)
         np.testing.assert_array_equal(saved["cluster_labels"], payload["cluster_labels"])
         np.testing.assert_allclose(saved["x_record"], payload["x_record"])
-
-
-def test_compute_collective_returns_and_writes_explicit_payload(tmp_path):
-    output_path = tmp_path / "collective_lyapunov.npz"
-    a_values = np.array([1.4, 1.6])
-
-    payload = compute_collective(
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=4,
-        renorm_interval=2,
-        seed=123,
-        output_path=output_path,
-        progress_interval=0,
-    )
-
-    np.testing.assert_allclose(payload["a_values"], a_values)
-    assert payload["lyap_c"].shape == (2,)
-    assert np.all(np.isfinite(payload["lyap_c"]))
-    assert int(payload["N"][0]) == 8
-    with np.load(output_path, allow_pickle=False) as saved:
-        assert set(saved.files) == set(payload)
-        np.testing.assert_allclose(saved["a_values"], payload["a_values"])
-        np.testing.assert_allclose(saved["lyap_c"], payload["lyap_c"])
 
 
 def test_sec10_msd_cache_shows_saturation_for_every_a():
@@ -1171,7 +1137,7 @@ def test_sec10_msd_cache_shows_saturation_for_every_a():
     assert np.all(msd_mean[:, -1] > 0.25 * msd_mean[:, 0])
 
 
-def test_sec10_gcm_caches_preserve_collective_signatures():
+def test_sec10_gcm_caches_preserve_cluster_and_msd_signatures():
     with np.load("figures/sec10_gcm/gcm_msd.npz", allow_pickle=False) as data:
         N_grid = data["N_values"]
         msd_grid = data["msd_mean"]
@@ -1179,10 +1145,6 @@ def test_sec10_gcm_caches_preserve_collective_signatures():
     with np.load("figures/sec10_gcm/gcm_clusters.npz", allow_pickle=False) as data:
         cluster_labels = data["cluster_labels"]
         n_sites = int(data["N"][0])
-
-    with np.load("figures/sec10_gcm/collective_lyapunov.npz", allow_pickle=False) as data:
-        a_values = data["a_values"]
-        lyap_c = data["lyap_c"]
 
     cluster_counts = np.array([np.unique(row).size for row in cluster_labels])
 
@@ -1192,13 +1154,6 @@ def test_sec10_gcm_caches_preserve_collective_signatures():
     assert np.all(msd_grid[:, -1] > msd_grid[:, 0] / 10.0)
     assert cluster_labels.shape == (500, 100)
     assert np.all((2 <= cluster_counts) & (cluster_counts <= n_sites / 10))
-    assert np.all(np.isfinite(lyap_c))
-    assert lyap_c[0] < 0.0
-    assert lyap_c[-1] > 0.0
-    assert np.min(lyap_c) < -0.25
-    assert np.max(lyap_c) > 0.4
-    assert a_values[0] == pytest.approx(1.4)
-    assert a_values[-1] == pytest.approx(2.0)
 
 
 def test_cluster_labels_by_tolerance_groups_sorted_runs():
@@ -1796,48 +1751,6 @@ def test_compute_clusters_seed_controls_rng_determinism():
     )
 
 
-def test_compute_collective_seed_controls_rng_determinism():
-    a_values = np.array([1.4, 1.6, 1.8])
-
-    first = compute_collective(
-        seed=7,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-    second = compute_collective(
-        seed=7,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    np.testing.assert_array_equal(first["lyap_c"], second["lyap_c"])
-
-    different_seed = compute_collective(
-        seed=99,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    assert not np.array_equal(first["lyap_c"], different_seed["lyap_c"]), (
-        "compute_collective should produce different lyap_c values for different seeds"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Golden-value regression tests for compute-aggregate functions
 # ---------------------------------------------------------------------------
@@ -1961,34 +1874,6 @@ def test_compute_clusters_golden_values(tmp_path):
     with np.load(output_path) as saved:
         np.testing.assert_array_equal(saved["cluster_labels"], payload["cluster_labels"])
         np.testing.assert_allclose(saved["x_record"], payload["x_record"], rtol=1e-9)
-
-
-# params: n_sites=4, a_values=[1.4, 1.6], n_transient=5, n_measure=10, seed=7
-def test_compute_collective_golden_values(tmp_path):
-    """Pin CURRENT aggregate output; catches silent numeric drift."""
-    output_path = tmp_path / "collective_golden.npz"
-    payload = compute_collective(
-        n_sites=4,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=5,
-        n_measure=10,
-        renorm_interval=5,
-        seed=7,
-        output_path=output_path,
-        progress_interval=0,
-    )
-
-    np.testing.assert_allclose(payload["a_values"], np.array([1.4, 1.6]), rtol=1e-9)
-    np.testing.assert_allclose(
-        payload["lyap_c"],
-        np.array([-0.11970016300271111, 0.17056225610801404]),
-        rtol=1e-9,
-    )
-    assert payload["lyap_c"].shape == (2,)
-    assert np.all(np.isfinite(payload["lyap_c"]))
-
-    with np.load(output_path) as saved:
-        np.testing.assert_allclose(saved["lyap_c"], payload["lyap_c"], rtol=1e-9)
 
 
 # params: n_grid=4, n_transient=2, reference_transient=2, period=2, seed=N/A

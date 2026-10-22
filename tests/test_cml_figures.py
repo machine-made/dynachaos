@@ -7,7 +7,7 @@ combination) and are not reachable within the test time budget -- see the
 per-module notes below. Where a module exposes a computation that runs in a
 fraction of a second at its own hardcoded scale (spatiotemporal.compute,
 pattern_dynamics.compute_space_amplitude, correlation_figure.compute_correlations,
-gcm_clusters.compute_clusters/compute_collective), it is exercised directly.
+gcm_clusters.compute_clusters), it is exercised directly.
 Plot functions are exercised with tiny synthetic payloads shaped like the
 real .npz schema, matching the monkeypatch-the-module-constant pattern used
 throughout test_maps.py (see test_arnold_tongues_main_calls_plot).
@@ -670,64 +670,6 @@ def test_gcm_clusters_detect_clusters_matches_shared_helper():
     )
 
 
-def test_gcm_clusters_compute_collective_defaults_a_values_when_omitted():
-    # a_values=None takes the np.linspace(1.4, 2.0, 100) default
-    # (src/dynachaos/cml/gcm_clusters.py:137); n_transient/n_measure are
-    # overridden to zero cost so the 100-value sweep still runs in well
-    # under a second.
-    payload = gcm_clusters.compute_collective(
-        n_sites=4,
-        n_transient=0,
-        n_measure=1,
-        renorm_interval=1,
-        seed=1,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    assert payload["a_values"].shape == (100,)
-    np.testing.assert_allclose(payload["a_values"][0], 1.4)
-    np.testing.assert_allclose(payload["a_values"][-1], 2.0)
-
-
-def test_gcm_clusters_compute_collective_zero_perturbation_reports_zero_lyapunov():
-    payload = gcm_clusters.compute_collective(
-        n_sites=4,
-        a_values=np.array([1.5]),
-        n_transient=0,
-        n_measure=4,
-        renorm_interval=1,
-        h_delta=0.0,
-        seed=1,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    # h_delta=0 means the two copies never separate, so n_renorm stays 0 and
-    # the fallback branch (src/dynachaos/cml/gcm_clusters.py:191) reports 0.
-    assert payload["lyap_c"][0] == 0.0
-
-
-def test_gcm_clusters_compute_collective_writes_progress_checkpoints(tmp_path):
-    output_path = tmp_path / "collective_lyapunov.npz"
-
-    gcm_clusters.compute_collective(
-        n_sites=4,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=3,
-        output_path=output_path,
-        progress_interval=1,
-    )
-
-    with np.load(output_path) as saved:
-        # The final checkpoint (progress_interval=1 fires every a) leaves both
-        # entries in the cache.
-        assert saved["a_values"].shape == (2,)
-
-
 def test_gcm_clusters_plot_clusters_writes_png(monkeypatch, tmp_path):
     png_path = tmp_path / "gcm_clusters.png"
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", png_path)
@@ -741,117 +683,42 @@ def test_gcm_clusters_plot_clusters_writes_png(monkeypatch, tmp_path):
     assert png_path.stat().st_size > 0
 
 
-def test_gcm_clusters_plot_collective_writes_png(monkeypatch, tmp_path):
-    png_path = tmp_path / "collective_lyapunov.png"
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", png_path)
-
-    payload = gcm_clusters.compute_collective(
-        n_sites=8,
-        a_values=np.linspace(1.4, 2.0, 6),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=7,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    gcm_clusters.plot_collective(payload)
-
-    assert png_path.stat().st_size > 0
-
-
-def test_gcm_clusters_plot_collective_fills_sustained_positive_band(monkeypatch, tmp_path):
-    png_path = tmp_path / "collective_lyapunov.png"
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", png_path)
-
-    # A run of >= min_run=4 positive entries triggers the shaded
-    # sustained-lambda_c > 0 fill_between branch (gcm_clusters.py:329-341).
-    a_values = np.linspace(1.4, 2.0, 8)
-    lyap_c = np.array([-0.3, -0.2, -0.1, 0.1, 0.2, 0.3, 0.2, -0.1])
-    payload = {
-        "a_values": a_values,
-        "lyap_c": lyap_c,
-        "eps": np.array([0.1]),
-        "N": np.array([8]),
-    }
-
-    gcm_clusters.plot_collective(payload)
-
-    assert png_path.stat().st_size > 0
-
-
 def test_gcm_clusters_main_computes_and_plots_when_cache_missing(monkeypatch, tmp_path):
     cluster_npz = tmp_path / "gcm_clusters.npz"
     cluster_png = tmp_path / "gcm_clusters.png"
-    coll_npz = tmp_path / "collective_lyapunov.npz"
-    coll_png = tmp_path / "collective_lyapunov.png"
     monkeypatch.setattr(gcm_clusters, "FIG_DIR", tmp_path)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_NPZ", cluster_npz)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", cluster_png)
-    monkeypatch.setattr(gcm_clusters, "COLL_NPZ", coll_npz)
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", coll_png)
 
     original_compute_clusters = gcm_clusters.compute_clusters
-    original_compute_collective = gcm_clusters.compute_collective
 
     def fake_compute_clusters(**_kwargs):
         return original_compute_clusters(
             n_sites=8, n_transient=2, n_record=4, seed=1, output_path=None
         )
 
-    def fake_compute_collective(**_kwargs):
-        return original_compute_collective(
-            n_sites=8,
-            a_values=np.array([1.4, 1.6]),
-            n_transient=1,
-            n_measure=2,
-            renorm_interval=1,
-            seed=1,
-            output_path=None,
-            progress_interval=0,
-        )
-
     monkeypatch.setattr(gcm_clusters, "compute_clusters", fake_compute_clusters)
-    monkeypatch.setattr(gcm_clusters, "compute_collective", fake_compute_collective)
 
     gcm_clusters.main()
 
     assert cluster_png.stat().st_size > 0
-    assert coll_png.stat().st_size > 0
 
 
-def test_gcm_clusters_main_plots_from_cache_when_both_files_exist(monkeypatch, tmp_path):
+def test_gcm_clusters_main_plots_from_cache_when_file_exists(monkeypatch, tmp_path):
     cluster_npz = tmp_path / "gcm_clusters.npz"
     cluster_png = tmp_path / "gcm_clusters.png"
-    coll_npz = tmp_path / "collective_lyapunov.npz"
-    coll_png = tmp_path / "collective_lyapunov.png"
     monkeypatch.setattr(gcm_clusters, "FIG_DIR", tmp_path)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_NPZ", cluster_npz)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", cluster_png)
-    monkeypatch.setattr(gcm_clusters, "COLL_NPZ", coll_npz)
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", coll_png)
 
     gcm_clusters.compute_clusters(
         n_sites=8, n_transient=2, n_record=4, seed=1, output_path=cluster_npz
     )
-    gcm_clusters.compute_collective(
-        n_sites=8,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=1,
-        output_path=coll_npz,
-        progress_interval=0,
-    )
 
-    # Both caches already exist, so main() takes the "Loaded" branch
-    # (gcm_clusters.py:369-370, 378-379) rather than recomputing.
+    # The cache already exists, so main() takes the "Loaded" branch rather than recomputing.
     gcm_clusters.main()
 
     assert cluster_png.stat().st_size > 0
-    assert coll_png.stat().st_size > 0
 
 
 # ---------------------------------------------------------------------------

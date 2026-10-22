@@ -547,38 +547,6 @@ def export_phase_diagram_sec03() -> dict[str, Any]:
     }
 
 
-def export_collective_lyapunov() -> dict[str, Any]:
-    """sec10_gcm/collective_lyapunov: collective Lyapunov exponent lambda_c vs a.
-
-    ``plot_collective`` (gcm_clusters.py) shades a "sustained lambda_c > 0"
-    region using ``sustained_positive_mask`` -- a threshold-plus-run-length
-    scan over the data, computed at draw time. That derived mask is not
-    reproduced here (it would be a second implementation of the same logic,
-    risking drift); only the raw line and the lambda=0 reference the mask is
-    drawn against are exported.
-    """
-    source = "sec10_gcm/collective_lyapunov"
-    npz = _load("sec10_gcm", "collective_lyapunov")
-    a_values = _require(npz, "a_values", source)
-    lyap_c = _require(npz, "lyap_c", source)
-    eps = float(_require(npz, "eps", source)[0])
-    n_count = int(_require(npz, "N", source)[0])
-    n = a_values.shape[0]
-    return {
-        "figure": source,
-        "kind": "lines",
-        "decimation": _no_decimation(n),
-        "axes": {"x": {"label": "a"}, "y": {"label": "λ_c"}},
-        "marks": [{"axis": "y", "value": 0.0, "label": "λ_c = 0"}],
-        "panels": [
-            {
-                "title": f"Collective Lyapunov exponent, ε = {eps:g}, N = {n_count}",
-                "traces": [{"name": "λ_c", "x": _round_list(a_values), "y": _round_list(lyap_c)}],
-            }
-        ],
-    }
-
-
 def export_double_staircase(max_points: int = 4000) -> dict[str, Any]:
     """sec06_three_torus/double_staircase: rho_theta and rho_phi vs D.
 
@@ -853,7 +821,6 @@ EXPORTERS: tuple[tuple[str, str, Any], ...] = (
     ("sec09_pattern", "phase_diagram", export_phase_diagram),
     ("sec04_doubling", "map_IV_lyapunov", export_map_iv_lyapunov),
     ("sec03_transition", "phase_diagram", export_phase_diagram_sec03),
-    ("sec10_gcm", "collective_lyapunov", export_collective_lyapunov),
     ("sec06_three_torus", "double_staircase", export_double_staircase),
     ("sec08_sti", "comoving_lyapunov", export_comoving_lyapunov),
     ("sec03_transition", "attractors", export_attractors_sec03),

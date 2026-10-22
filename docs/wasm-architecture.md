@@ -652,7 +652,6 @@ defined in `rust/wasm/src/lib.rs:32`.
 | sec10_gcm | gcm_msd.png | cml.globally_coupled | C | none | precomputed | C: N reaches 20,000 and each series has 100,000 samples |
 | sec10_gcm | gcm_distribution.png | cml.globally_coupled | C | none | precomputed | C: N reaches 20,000 and each series has 100,000 samples |
 | sec10_gcm | gcm_clusters.png | cml.gcm_clusters | C | none | precomputed | C: cluster labels are a fixed phase exemplar with 20,000 transient and 500 record steps |
-| sec10_gcm | collective_lyapunov.png | cml.gcm_clusters | C | none | precomputed | C: 100 parameter values at N=500 and 50,000 measurement steps are paper-scale |
 | sec11_diagnostics | test01_sweep.png | diagnostics.compare_all | C | none | precomputed | C: 500-parameter sweep, 5,000-series samples, and 50 frequencies per point |
 | sec11_diagnostics | sali_comparison.png | diagnostics.compare_all | C | none | precomputed | C: four fixed 10,000-step SALI diagnostic traces are published comparisons |
 | sec11_diagnostics | permutation_entropy.png | diagnostics.compare_all | C | none | precomputed | C: 500 logistic plus 300 delayed-logistic parameter sweeps over 5,000 samples |
