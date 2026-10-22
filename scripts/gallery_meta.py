@@ -154,7 +154,8 @@ CAPTIONS: dict[str, str] = {
     ),
     "sec12_intermittency/sti_spine.png": (
         "Spatiotemporal intermittency in a coupled map lattice: turbulent-fraction onset and "
-        "an exponential laminar cluster-size tail."
+        "power-law, exponential and truncated power-law fits to the laminar-length tail at "
+        "three couplings."
     ),
 }
 
