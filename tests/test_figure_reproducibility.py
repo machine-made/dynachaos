@@ -24,7 +24,7 @@ HEAVY_REPRODUCIBILITY_SECTIONS = (
     "sec05_oscillation",
     "sec06_three_torus",
     "sec07_fractalization",
-    # gcm_lyapunov_max runs 2400 tangent-map integrations of 11000 steps (about 4 min).
+    # gcm_lyapunov_max takes about 4 min and gcm_collective_fsle about 80 min (N up to 1e6).
     "sec10_gcm",
 )
 
