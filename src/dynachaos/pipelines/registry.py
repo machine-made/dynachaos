@@ -338,7 +338,21 @@ SECTION_SPECS = {
         ),
         npz_contracts=(
             NpzContract("fractal_attractors.npz", ("D_values", "A")),
-            NpzContract("correlation_dimension.npz", ("D", "D2", "A")),
+            NpzContract(
+                "correlation_dimension.npz",
+                (
+                    "D",
+                    "D2",
+                    "D2_err",
+                    "A",
+                    "valid_mask",
+                    "failed_mask",
+                    "mean_window_D2",
+                    "std_window_D2",
+                    "window_min",
+                    "window_max",
+                ),
+            ),
         ),
         figures=(
             FigureSpec(

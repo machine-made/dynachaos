@@ -61,6 +61,7 @@ from dynachaos.maps.delayed_logistic import (
 from dynachaos.maps.delayed_logistic import (
     compute_lyapunov_spectrum as compute_delayed_lyapunov_spectrum,
 )
+from dynachaos.maps.fractalization import dimension_window_statistics
 from dynachaos.maps.henon import henon, henon_jac
 from dynachaos.maps.intermittency import (
     LOGISTIC_TYPE_I_ONSET,
@@ -800,6 +801,48 @@ def test_sec07_correlation_dimension_cache_stays_bounded_and_rises():
     assert np.max(D2) <= 1.45
     assert np.median(high_window) > np.median(low_window) + 0.15
     assert np.corrcoef(D, D2)[0, 1] > 0.5
+
+    # 101 values of D on [1.70, 2.00]; a smooth torus has D_2 = 1.
+    np.testing.assert_allclose(D, np.linspace(1.70, 2.00, 101))
+    assert abs(np.median(low_window) - 1.0) < 0.05
+
+    # A fit below D_2 = 1 is a failed fit: it is flagged, and it is left out of the window
+    # statistics, whose values are recomputed here from the stored sweep.
+    with np.load(
+        "figures/sec07_fractalization/correlation_dimension.npz", allow_pickle=False
+    ) as data:
+        valid_mask = data["valid_mask"]
+        failed_mask = data["failed_mask"]
+        stored = (float(data["mean_window_D2"][0]), float(data["std_window_D2"][0]))
+        window = (float(data["window_min"][0]), float(data["window_max"][0]))
+    np.testing.assert_array_equal(valid_mask, D2 >= 1.0)
+    np.testing.assert_array_equal(failed_mask, ~valid_mask)
+    assert 1 <= failed_mask.sum() <= 10
+    assert np.all(D2[failed_mask] > 0.8)
+    assert window == (1.92, 1.95)
+    _, mean_D2, std_D2 = dimension_window_statistics(D, D2, window)
+    assert stored == pytest.approx((mean_D2, std_D2), rel=1e-12)
+    assert 1.15 < mean_D2 < 1.35
+    assert 0.0 < std_D2 < 0.15
+
+
+def test_dimension_window_statistics_leaves_out_failed_fits():
+    D = np.array([1.90, 1.92, 1.93, 1.94, 1.95, 1.96])
+    D2 = np.array([1.00, 1.20, 0.90, 1.30, 1.25, 1.00])
+
+    valid, mean, std = dimension_window_statistics(D, D2, (1.92, 1.95))
+
+    np.testing.assert_array_equal(valid, [True, True, False, True, True, True])
+    # The window holds 1.20, 1.30 and 1.25 (the failed 0.90 is left out).
+    assert mean == pytest.approx(1.25)
+    assert std == pytest.approx(0.05)
+    # One valid fit gives a mean without scatter; none gives neither.
+    _, mean_one, std_one = dimension_window_statistics(D, D2, (1.94, 1.945))
+    assert mean_one == pytest.approx(1.30)
+    assert np.isnan(std_one)
+    _, mean_none, std_none = dimension_window_statistics(D, D2, (1.93, 1.935))
+    assert np.isnan(mean_none)
+    assert np.isnan(std_none)
 
 
 def test_sec09_spatial_activity_separates_pattern_phase_samples():

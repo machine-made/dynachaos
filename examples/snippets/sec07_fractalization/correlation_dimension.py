@@ -1,5 +1,6 @@
 # Reduced preview (3 D values, 3000 points). Full figure: dynachaos run sec07_fractalization
-# Correlation dimension D_2(D) of the delayed logistic map (alpha=0.3).
+# Correlation dimension D_2(D) of the delayed logistic map (alpha = 0.3).
+# Full figure uses 101 values; window [1.92, 1.95] gives D_2 = 1.24 +/- 0.07 (excluding D_2 < 1).
 from dynachaos.diagnostics.correlation import correlation_dimension
 from dynachaos.maps.fractalization import iterate
 
