@@ -146,6 +146,8 @@ def test_sec02_k_inf_cache_brackets_the_one_fifth_lock_onset():
     with np.load(figure_dir / "k_inf.npz", allow_pickle=False) as data:
         k_inf = float(data["K_inf"][0])
         uncertainty = float(data["uncertainty"][0])
+        k_inf_long = float(data["k_inf_long"][0])
+        k_inf_shift = float(data["k_inf_shift"][0])
         k_low = float(data["k_low_final"][0])
         k_high = float(data["k_high_final"][0])
         k_low_init = float(data["k_low_init"][0])
@@ -154,8 +156,10 @@ def test_sec02_k_inf_cache_brackets_the_one_fifth_lock_onset():
 
     assert omega == pytest.approx(0.25)
     assert k_low <= k_inf <= k_high
-    assert uncertainty == pytest.approx(0.5 * (k_high - k_low))
-    assert uncertainty < 1e-12
+    # The uncertainty is the bisection half-width plus the shift from a 4x longer transient.
+    assert k_inf_shift == pytest.approx(k_inf_long - k_inf)
+    assert uncertainty == pytest.approx(0.5 * (k_high - k_low) + abs(k_inf_shift))
+    assert uncertainty < 1e-8
     assert k_inf == pytest.approx(0.1567168, abs=1e-7)
     assert k_low_init < k_inf < k_high_init
 

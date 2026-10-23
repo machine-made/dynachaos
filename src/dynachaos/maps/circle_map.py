@@ -210,7 +210,12 @@ def compute_k_inf(
     tol=1e-8,
     theta0=0.1,
 ):
-    """Find K_infty at D = 0.25 for the 1/5 tongue and save ``k_inf.npz``."""
+    """Find K_infty at D = 0.25 for the 1/5 tongue and save ``k_inf.npz``.
+
+    The lock test depends on the transient length near the saddle-node.  The bisection is
+    repeated with ``4 * n_transient``; ``k_inf_shift`` is the change in K_infty and
+    ``uncertainty`` is the bisection half-width plus ``|k_inf_shift|``.
+    """
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     print(f"  Finding K_infty at Omega={D} via bisection ({n_steps} steps)...")
     k_inf, low, high = bisect_k_inf(
@@ -224,11 +229,28 @@ def compute_k_inf(
         tol=tol,
         theta0=theta0,
     )
-    uncertainty = 0.5 * (high - low)
-    print(f"  K_infty = {k_inf:.8f} +/- {uncertainty:.2e} (interval [{low:.10f}, {high:.10f}])")
+    k_inf_long, _, _ = bisect_k_inf(
+        D=D,
+        q=q,
+        k_low=k_low,
+        k_high=k_high,
+        n_steps=n_steps,
+        n_transient=4 * n_transient,
+        n_check=n_check,
+        tol=tol,
+        theta0=theta0,
+    )
+    k_inf_shift = k_inf_long - k_inf
+    uncertainty = 0.5 * (high - low) + abs(k_inf_shift)
+    print(
+        f"  K_infty = {k_inf:.8f} +/- {uncertainty:.2e} (interval [{low:.10f}, {high:.10f}]); "
+        f"{4 * n_transient} transient steps give {k_inf_long:.8f}"
+    )
     payload = {
         "K_inf": np.array([k_inf], dtype=np.float64),
         "uncertainty": np.array([uncertainty], dtype=np.float64),
+        "k_inf_long": np.array([k_inf_long], dtype=np.float64),
+        "k_inf_shift": np.array([k_inf_shift], dtype=np.float64),
         "k_low_final": np.array([low], dtype=np.float64),
         "k_high_final": np.array([high], dtype=np.float64),
         "Omega": np.array([D], dtype=np.float64),
@@ -497,7 +519,7 @@ def main():
         K_INF_NPZ,
         "K_infty bisection",
         compute_k_inf,
-        required_keys=("K_inf", "uncertainty"),
+        required_keys=("K_inf", "uncertainty", "k_inf_shift"),
     )
 
     # Devil's staircase

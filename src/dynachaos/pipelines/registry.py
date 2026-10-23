@@ -95,7 +95,17 @@ SECTION_SPECS = {
             NpzContract("devils_staircase.npz", ("A", "rho", "lam")),
             NpzContract("arnold_tongues.npz", ("Omega", "K", "rho")),
             NpzContract("staircase_zoom.npz", ("A", "rho")),
-            NpzContract("k_inf.npz", ("K_inf", "uncertainty", "k_low_final", "k_high_final")),
+            NpzContract(
+                "k_inf.npz",
+                (
+                    "K_inf",
+                    "uncertainty",
+                    "k_inf_long",
+                    "k_inf_shift",
+                    "k_low_final",
+                    "k_high_final",
+                ),
+            ),
         ),
         figures=(
             FigureSpec(
