@@ -1268,8 +1268,8 @@ def hero(meta: dict[str, str], body: str) -> str:
 <h1>{html.escape(meta["title"])}</h1>
 <p class="byline">{html.escape(meta.get("authors") or "Ricardo Frantz")}<span class="affil">{html.escape(meta.get("affil", ""))}</span></p>
 <p class="pub-meta"><time datetime="{meta.get("date", "2026-10-17")}">{meta.get("date", "2026-10-17")}</time> &middot; dynachaos {meta.get("version", "0.4.1")} &middot; <span class="pub-status">Preprint, not peer reviewed</span></p>
-<p class="lede">{html.escape(meta["lede"])}</p>
 <p class="hero-links"><a href="gallery.html">all figures as a gallery</a> &middot; <a href="#how-to-cite">how to cite</a></p>
+<p class="lede">{html.escape(meta["lede"])}</p>
 <ul class="stats">{stats}</ul>
 </div>
 <div class="legend">
