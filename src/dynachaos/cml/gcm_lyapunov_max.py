@@ -87,7 +87,7 @@ def compute(
     The run for size N, seed index s and a-index ia uses the generator seed
     ``seed_base + 1000 * N + s + ia``.  ``runs_<N>`` has shape ``(n_seeds, len(a))``;
     ``mean_<N>`` and ``se_<N>`` are the mean over seeds and its standard error
-    (population standard deviation over sqrt(n_seeds)).
+    (sample standard deviation, ddof = 1, over sqrt(n_seeds)).
     """
     if a_values is None:
         a_values = np.linspace(1.40, 2.00, 100)
@@ -114,7 +114,7 @@ def compute(
         )
         payload[f"runs_{N}"] = runs
         payload[f"mean_{N}"] = runs.mean(axis=0)
-        payload[f"se_{N}"] = runs.std(axis=0) / np.sqrt(n_seeds)
+        payload[f"se_{N}"] = runs.std(axis=0, ddof=1) / np.sqrt(n_seeds)
         print(f"  N = {N}: lambda_max in [{runs.min():+.4f}, {runs.max():+.4f}]", flush=True)
 
     if output_path is not None:

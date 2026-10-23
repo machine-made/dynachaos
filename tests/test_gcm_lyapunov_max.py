@@ -115,7 +115,7 @@ def test_compute_seeds_each_run_by_size_seed_and_a_index(tmp_path):
             expected = gcm_lyapunov_max.lyapunov_max(a, 0.1, 10, 20, 60, 7 + 1000 * 10 + s + ia)
             assert runs[s, ia] == expected
     np.testing.assert_allclose(payload["mean_10"], runs.mean(axis=0))
-    np.testing.assert_allclose(payload["se_10"], runs.std(axis=0) / np.sqrt(3))
+    np.testing.assert_allclose(payload["se_10"], runs.std(axis=0, ddof=1) / np.sqrt(3))
     with np.load(output_path, allow_pickle=False) as saved:
         assert set(saved.files) == set(payload)
         np.testing.assert_array_equal(saved["runs_6"], payload["runs_6"])
