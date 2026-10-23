@@ -288,7 +288,12 @@ def extract_meta(tex: str) -> dict[str, str]:
     def clean(raw: str) -> str:
         raw = ACCENT_RE.sub(lambda m: ACCENTS.get((m.group(1), m.group(2)), m.group(2)), raw)
         raw = re.sub(r"\\[a-zA-Z]+\{([^{}]*)\}", r"\1", raw)
-        raw = raw.replace(r"\&", "&").replace("~", " ").replace("---", "\u2014").replace("--", "\u2013")
+        raw = (
+            raw.replace(r"\&", "&")
+            .replace("~", " ")
+            .replace("---", "\u2014")
+            .replace("--", "\u2013")
+        )
         raw = re.sub(r"\\[a-zA-Z]+", "", raw)
         raw = raw.replace("{", "").replace("}", "")
         return " ".join(raw.split()).strip()
