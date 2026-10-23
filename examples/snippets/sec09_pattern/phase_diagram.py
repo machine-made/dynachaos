@@ -1,5 +1,7 @@
-# Reduced preview (3 (a, eps) states, N = 100). Full figure: dynachaos run sec09_pattern
-# Single-site temporal variance log10(var) of the logistic CML across (a, eps).
+# Reduced preview (3 (a, eps) states, N = 100, 500-step transient, 200 samples).
+# Full figure: dynachaos run sec09_pattern (200 x 160 grid, 2000 samples after 5000 transient).
+# Spatial activity <|x_i - x_{i-1}|> of the logistic coupled map lattice
+# (Kaneko 1989) separates spatially smooth from spatially rough states.
 import numpy as np
 
 from dynachaos.cml.primitives import cml_step_logistic as cml_step
@@ -10,9 +12,8 @@ for a, eps in ((1.50, 0.10), (1.72, 0.10), (1.90, 0.10)):
     x = rng.uniform(-1, 1, N)
     for _ in range(500):
         x = cml_step(x, a, eps)
-    site_0 = np.empty(2000)
-    for s in range(2000):
+    activity = 0.0
+    for _ in range(200):
         x = cml_step(x, a, eps)
-        site_0[s] = x[0]
-    log_var = np.log10(np.var(site_0) + 1e-12)
-    print(f"a={a:.2f} eps={eps:.2f}  single-site log10(var)={log_var:.4f}")
+        activity += np.mean(np.abs(x - np.roll(x, 1)))
+    print(f"a={a:.2f} eps={eps:.2f}  spatial activity={activity / 200:.4f}")
