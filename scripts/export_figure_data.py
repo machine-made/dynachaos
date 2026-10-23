@@ -314,6 +314,7 @@ def export_lyapunov_vs_d() -> dict[str, Any]:
     spectra = _require(npz, "spectra", source)
     spectra_err = _require(npz, "spectra_err", source)
     n = d.shape[0]
+    decimation = _no_decimation(n)
 
     traces_lyap = []
     for col in range(spectra.shape[1]):
@@ -347,8 +348,16 @@ def export_lyapunov_vs_d() -> dict[str, Any]:
         psd_db_170 = 10.0 * np.log10(np.maximum(psd_170, 1e-6))
         psd_db_186 = 10.0 * np.log10(np.maximum(psd_186, 1e-6))
 
-        x_170, y_170 = _minmax_decimate(freqs_170, psd_db_170, 1000)
-        x_186, y_186 = _minmax_decimate(freqs_186, psd_db_186, 1000)
+        n_bins = 1000
+        x_170, y_170 = _minmax_decimate(freqs_170, psd_db_170, n_bins)
+        x_186, y_186 = _minmax_decimate(freqs_186, psd_db_186, n_bins)
+        if freqs_170.shape != freqs_186.shape:
+            raise SystemExit("spectra differ in length, one decimation record cannot describe both")
+        decimation = _minmax_bin_decimation(freqs_170.shape[0], n_bins)
+        decimation["note"] = (
+            "the two power-spectrum traces are min/max-decimated to 1000 bins; "
+            "the Lyapunov traces are not decimated"
+        )
 
         traces_psd = [
             {"name": "D = 1.70", "x": _round_list(x_170), "y": _round_list(y_170)},
@@ -371,7 +380,7 @@ def export_lyapunov_vs_d() -> dict[str, Any]:
     return {
         "figure": source,
         "kind": "lines",
-        "decimation": _no_decimation(n),
+        "decimation": decimation,
         "axes": {"x": {"label": "D or Frequency f"}, "y": {"label": "Lyapunov exponent or S(f)"}},
         "marks": [
             {"axis": "x", "value": _neimark_sacker_dc(ALPHA), "label": "D_c"},
