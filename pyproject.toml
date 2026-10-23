@@ -36,7 +36,7 @@ classifiers = [
 dependencies = ["numpy>=2.5.1", "scipy>=1.18"]
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.11", "pillow>=12.3", "fonttools>=4.63", "brotli>=1.2"]
+viz = ["matplotlib>=3.11", "pillow>=12.3", "fonttools>=4.63", "brotli>=1.2.1"]
 dev = ["pytest>=9.1", "maturin>=1.14,<2.0", "ruff>=0.16"]
 
 [project.urls]
@@ -107,6 +107,6 @@ dev = [
     "maturin>=1.14,<2.0",
     "ruff>=0.16",
     "fonttools>=4.63.0",
-    "brotli>=1.2.0",
+    "brotli>=1.2.1",
     "pytest-cov>=7.1.0",
 ]
