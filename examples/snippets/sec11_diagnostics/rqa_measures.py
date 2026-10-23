@@ -1,17 +1,18 @@
-# Figure: RQA measures (RR, DET, LAM, ENTR) along the delayed logistic map.
+# Reduced preview (3 D values). Full figure: dynachaos run sec11_diagnostics
+# RQA measures (RR, DET, LAM) along the delayed logistic map (alpha=0.3).
 import numpy as np
 
 from dynachaos.diagnostics.recurrence import recurrence_matrix, rqa
 from dynachaos.maps.primitives import delayed_logistic
 
-A = 0.3
+alpha = 0.3
 for D in (1.6, 1.9, 2.1):
     state = np.array([0.51, 0.49])
     for _ in range(2000):
-        state = delayed_logistic(state, A, D)
+        state = delayed_logistic(state, alpha, D)
     traj = np.empty((500, 2))
     for i in range(500):
-        state = delayed_logistic(state, A, D)
+        state = delayed_logistic(state, alpha, D)
         traj[i] = state
     R, _ = recurrence_matrix(traj, percentile=5)
     stats = rqa(R, l_min=2, v_min=2)

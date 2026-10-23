@@ -16,8 +16,6 @@ FAST_REPRODUCIBILITY_SECTIONS = (
     "sec03_transition",
     "sec08_sti",
     "sec09_pattern",
-    "sec10_gcm",
-    "sec11_diagnostics",
 )
 HEAVY_REPRODUCIBILITY_SECTIONS = (
     "sec02_circle_map",
@@ -25,6 +23,10 @@ HEAVY_REPRODUCIBILITY_SECTIONS = (
     "sec05_oscillation",
     "sec06_three_torus",
     "sec07_fractalization",
+    # gcm_lyapunov_max takes about 4 min and gcm_collective_fsle about 80 min (N up to 1e6).
+    "sec10_gcm",
+    # about 23 min, dominated by agreement_figure and alignment_three_torus.
+    "sec11_diagnostics",
 )
 
 

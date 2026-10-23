@@ -115,7 +115,8 @@ def ordinal_distribution(x, d=5, tau=1):
     n_patterns : int
         Total number of windows analysed.
     """
-    x = np.asarray(x, dtype=np.float64)
+    # The Rust kernel rejects strided views such as states[:, 0].
+    x = np.ascontiguousarray(x, dtype=np.float64)
     d, tau, _ = _validate_ordinal_parameters(x, d, tau)
 
     if _RUST_AVAILABLE:

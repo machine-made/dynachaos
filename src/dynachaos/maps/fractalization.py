@@ -18,7 +18,10 @@ Fractalization visible for D ∈ [1.90, 1.95].
 
 Figures:
   - Attractor portraits showing progressive fractalization
-  - Correlation dimension D_2 vs D (Grassberger-Procaccia)
+  - Correlation dimension D_2 vs D (Grassberger-Procaccia): 101 values of D, with the mean
+    and scatter of D_2 over the fractalized window D in [1.92, 1.95].  A fit that gives
+    D_2 < 1 is a failed fit (a curve cannot have a dimension below 1): it is marked and
+    left out of the curve, the band and the window statistics.
 
 OUTPUTS: figures/sec07_fractalization/*.npz, *.png
 USAGE:   python src/dynachaos/maps/fractalization.py
@@ -39,6 +42,9 @@ DIM_NPZ = FIG_DIR / "correlation_dimension.npz"
 DIM_PNG = FIG_DIR / "correlation_dimension.png"
 ANIM_NPZ = FIG_DIR / "fractalization_animation.npz"
 ANIM_GIF = FIG_DIR / "fractalization_animation.gif"
+
+# Fractalized window of D over which D_2 is averaged.
+FRACTAL_WINDOW = (1.92, 1.95)
 
 
 # ---------------------------------------------------------------------------
@@ -86,36 +92,69 @@ def compute_attractors():
     print(f"Saved {FRAC_NPZ}")
 
 
-def compute_dimensions():
-    """Compute correlation dimension D_2 vs D."""
+def dimension_window_statistics(D, D2, window=FRACTAL_WINDOW):
+    """Return ``(valid, mean, std)`` of D_2 over ``window``, leaving out failed fits.
+
+    ``valid`` marks the fits with D_2 >= 1.  ``mean`` and ``std`` (sample standard
+    deviation, ddof = 1) use the valid fits inside the closed interval ``window``;
+    each is NaN when the window holds too few valid fits.
+    """
+    D = np.asarray(D)
+    D2 = np.asarray(D2)
+    valid = D2 >= 1.0
+    window_D2 = D2[(D >= window[0]) & (D <= window[1]) & valid]
+    mean = float(np.mean(window_D2)) if window_D2.size > 0 else np.nan
+    std = float(np.std(window_D2, ddof=1)) if window_D2.size > 1 else np.nan
+    return valid, mean, std
+
+
+def compute_dimensions(
+    A=0.3,
+    n_params=101,
+    d_min=1.70,
+    d_max=2.00,
+    n_transient=10_000,
+    n_record=20_000,
+    max_pairs=200_000,
+    n_r=40,
+    window=FRACTAL_WINDOW,
+):
+    """Compute the correlation dimension D_2 over a sweep of D and save the cache."""
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    A = 0.3
-    n_params = 200
-    D_values = np.linspace(1.70, 2.00, n_params)
-    D2_values = np.empty(n_params)
-    D2_err_values = np.empty(n_params)
+    D_values = np.linspace(d_min, d_max, n_params)
+    D2_values = np.empty(n_params, dtype=np.float64)
+    D2_err_values = np.empty(n_params, dtype=np.float64)
 
     for i, D in enumerate(D_values):
-        traj = iterate(A, D, n_transient=50_000, n_record=100_000)
+        traj = iterate(A, D, n_transient=n_transient, n_record=n_record)
         D2, _, _, D2_err, _, _ = correlation_dimension(
-            traj, n_r=50, max_pairs=1_000_000, return_stderr=True
+            traj, n_r=n_r, max_pairs=max_pairs, return_stderr=True
         )
         D2_values[i] = D2
         D2_err_values[i] = D2_err
+        if (i + 1) % 20 == 0 or i == n_params - 1:
+            print(f"  [{i + 1}/{n_params}] D = {D:.4f}: D2 = {D2:.3f} +/- {D2_err:.3f}")
 
-        if (i + 1) % 20 == 0:
-            print(f"  Dimension: {i + 1}/{n_params}")
-            np.savez_compressed(
-                DIM_NPZ,
-                D=D_values[: i + 1],
-                D2=D2_values[: i + 1],
-                D2_err=D2_err_values[: i + 1],
-                A=np.array([A]),
-            )
+    valid, mean_D2, std_D2 = dimension_window_statistics(D_values, D2_values, window)
+    print(f"  Failed fits (D2 < 1): {np.count_nonzero(~valid)} of {n_params}")
+    print(f"  D_2 = {mean_D2:.3f} +/- {std_D2:.3f} over D in [{window[0]}, {window[1]}]")
 
-    np.savez_compressed(DIM_NPZ, D=D_values, D2=D2_values, D2_err=D2_err_values, A=np.array([A]))
+    payload = {
+        "D": D_values,
+        "D2": D2_values,
+        "D2_err": D2_err_values,
+        "valid_mask": valid,
+        "failed_mask": ~valid,
+        "mean_window_D2": np.array([mean_D2]),
+        "std_window_D2": np.array([std_D2]),
+        "window_min": np.array([window[0]]),
+        "window_max": np.array([window[1]]),
+        "A": np.array([A]),
+    }
+    np.savez_compressed(DIM_NPZ, **payload)
     print(f"Saved {DIM_NPZ}")
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +227,7 @@ def plot_attractors(data):
 
 
 def plot_dimension(data):
-    """Plot correlation dimension D_2 vs D."""
+    """Plot D_2 vs D with failed fits (D_2 < 1) marked and the fractal-window statistics."""
     import matplotlib.pyplot as plt
 
     from dynachaos.utils.style import (
@@ -205,32 +244,55 @@ def plot_dimension(data):
     D = data["D"]
     D2 = data["D2"]
     D2_err = data["D2_err"]
+    valid, mean_D2, std_D2 = dimension_window_statistics(D, D2)
+    failed = ~valid
 
     spec = figure_spec("double")
     fig, ax = plt.subplots(figsize=spec.figsize)
-    ax.plot(D, D2, color=COLORS["black"], linestyle="-", lw=0.8)
+
+    # Valid fits as continuous segments; failed fits leave a gap in the curve and band.
+    d2_valid = np.where(valid, D2, np.nan)
+    d2_err_valid = np.where(valid, D2_err, np.nan)
+    ax.plot(D, d2_valid, color=COLORS["black"], linestyle="-", lw=0.9, label=r"$D_2(D)$")
     ax.fill_between(
         D,
-        D2 - D2_err,
-        D2 + D2_err,
+        d2_valid - d2_err_valid,
+        d2_valid + d2_err_valid,
         alpha=0.15,
         color=COLORS["black"],
         linewidth=0,
         zorder=0,
+        label=r"$\pm 1\sigma$ fit uncertainty",
     )
-    reference_line(ax, 1.0, axis="y", lw=0.6, alpha=0.7, label="$D_2 = 1$ (smooth torus)")
-    ax.axvspan(1.92, 1.95, color=COLORS["grey"], alpha=0.10, zorder=0)
+    if np.any(failed):
+        ax.scatter(
+            D[failed],
+            D2[failed],
+            color=COLORS["red"],
+            marker="x",
+            s=28,
+            linewidths=1.2,
+            zorder=4,
+            label=r"Failed fit ($D_2 < 1$)",
+        )
+    reference_line(ax, 1.0, axis="y", lw=0.6, alpha=0.7, label=r"$D_2 = 1$ (smooth torus)")
+    ax.axvspan(
+        *FRACTAL_WINDOW,
+        color=COLORS["grey"],
+        alpha=0.12,
+        zorder=0,
+        label=rf"Fractal window ($D_2 = {mean_D2:.2f} \pm {std_D2:.2f}$)",
+    )
     ax.set_xlabel(r"$D$")
     ax.set_ylabel(r"Correlation dimension $D_2$")
     ax.set_title(r"Delayed logistic map, $\alpha = 0.3$", loc="left")
-    # The old fixed (0.9, 1.45) ylim silently clipped the D2-D2_err dip near
-    # D~1.94 (down to ~0.886), cutting off the exact "local dips near the
-    # transition" the caption asks the reader to see. Derive the limits from
-    # the data (with the +/-1 sigma band included) so nothing is cropped.
-    y_lo = float(np.min(D2 - D2_err))
-    y_hi = float(np.max(D2 + D2_err))
-    y_pad = 0.05 * (y_hi - y_lo)
-    ax.set_ylim(y_lo - y_pad, y_hi + y_pad)
+    # Limits come from the valid fits with their +/-1 sigma band and from every failed
+    # fit, so no marker falls outside the axes (the D_2 = 0.84 fit near D = 1.94 would).
+    y_min = min(0.95, float(np.nanmin(D2[valid] - D2_err[valid])))
+    if np.any(failed):
+        y_min = min(y_min, float(np.nanmin(D2[failed])))
+    y_max = max(1.40, float(np.nanmax(D2[valid] + D2_err[valid])))
+    ax.set_ylim(y_min - 0.03, y_max + 0.04)
     apply_axes_polish(ax, kind="double", title_loc="left", grid=False)
     finalize_legend(ax, kind="single", loc="upper left")
 

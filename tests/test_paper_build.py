@@ -422,7 +422,9 @@ def test_the_assembled_page_numbers_everything_the_way_the_manuscript_does():
         fid = re.search(r'id="(fig:[^"]+)"', tag)
         if num and fid:
             shown[fid.group(1)] = num.group(1)
-    assert len(shown) == 37, f"expected 37 numbered figures, found {len(shown)}"
+    # 38 since the GCM collective-exponent figure became two (lambda_max; finite-size exponent).
+    assert len(shown) == 38, f"expected 38 numbered figures, found {len(shown)}"
+    assert sorted(int(n) for n in shown.values()) == list(range(1, 39))
 
     # Every figure reference must name the number its figure displays.
     disagreements = [
@@ -500,9 +502,12 @@ def test_minify_keeps_the_space_before_an_inline_tag_only():
     assert minify("</span> <math><mi>x</mi></math>") == "</span> <math><mi>x</mi></math>"
 
 
-def test_the_lede_comes_from_the_sitelede_macro_when_the_manuscript_defines_one():
+def test_the_lede_comes_from_the_sitelede_macro_when_the_manuscript_defines_one(monkeypatch):
     """Check the page lede is the hand-written macro, not a sentence cut from the abstract."""
-    extract_meta = _load().extract_meta
+    module = _load()
+    # The abstract HTML needs pandoc, which CI does not install; the lede does not use it.
+    monkeypatch.setattr(module, "abstract_to_html", lambda raw: raw)
+    extract_meta = module.extract_meta
     tex = (
         "\\newcommand{\\sitelede}{Kaneko\u2019s papers, recomputed.}\n"
         "\\begin{abstract}\nOld work. We investigate whether it holds.\n\\end{abstract}\n"

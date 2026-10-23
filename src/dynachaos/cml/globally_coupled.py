@@ -9,22 +9,40 @@ GCM model (Eq. 1):
 
 with f(x) = 1 - a x^2 (logistic map).
 
-Key result: MSD of mean field h_n stops decreasing with N.
+Key result: MSD of mean field h_n stops decreasing with N.  The MSD figure sweeps five
+values of a and eight system sizes with eight random seeds per point, and fits
+MSD(N) = A/N + B for each a: a saturation B > 0 means the law of large numbers fails.
 
-OUTPUTS: figures/sec10_gcm/*.npz, *.png
+OUTPUTS: figures/sec10_gcm/gcm_results.npz, gcm_distribution.png,
+         figures/sec10_gcm/gcm_msd.npz, gcm_msd.png
 """
 
 import numpy as np
 
 from dynachaos.cml.primitives import gcm_step
-from dynachaos.io.paths import safe_load, section_dir
+from dynachaos.io.paths import load_or_compute_npz, safe_load, section_dir
 from dynachaos.maps.primitives import logistic
 
 FIG_DIR = section_dir("sec10_gcm")
 
 GCM_NPZ = FIG_DIR / "gcm_results.npz"
+MSD_NPZ = FIG_DIR / "gcm_msd.npz"
 GCM_PNG = FIG_DIR / "gcm_msd.png"
 DIST_PNG = FIG_DIR / "gcm_distribution.png"
+MSD_REQUIRED_KEYS = (
+    "a_values",
+    "N_values",
+    "eps",
+    "n_seeds",
+    "msd_all",
+    "msd_mean",
+    "msd_std",
+    "msd_stderr",
+    "fits_A",
+    "fits_B",
+    "fits_B_stderr",
+    "fits_r2",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +51,7 @@ DIST_PNG = FIG_DIR / "gcm_distribution.png"
 
 
 def compute():
-    """Compute MSD of mean field for various N."""
+    """Sample the mean field h_n for several N (distribution P(h) and its variance)."""
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
     a = 1.99
@@ -66,30 +84,93 @@ def compute():
     results["a"] = np.array([a])
     results["eps"] = np.array([eps])
 
-    # MSD vs N for multiple a values
-    a_for_msd = [1.80, 1.85, 1.92, 1.95, 1.99]
-    N_grid = [100, 200, 500, 1000, 2000, 5000, 10_000, 20_000]
-    msd_grid = np.empty((len(a_for_msd), len(N_grid)))
-
-    for ia, a_val in enumerate(a_for_msd):
-        for jn, N_val in enumerate(N_grid):
-            x = rng.uniform(-1, 1, N_val)
-            for _ in range(5000):
-                x = gcm_step(x, a_val, eps)
-            h_vals = np.empty(50_000)
-            for t in range(50_000):
-                x = gcm_step(x, a_val, eps)
-                fx = logistic(x, a_val)
-                h_vals[t] = np.mean(fx)
-            msd_grid[ia, jn] = np.var(h_vals)
-        print(f"  MSD: a={a_val} done")
-
-    results["a_for_msd"] = np.array(a_for_msd)
-    results["N_grid"] = np.array(N_grid)
-    results["msd_grid"] = msd_grid
-
     np.savez_compressed(GCM_NPZ, **results)
     print(f"Saved {GCM_NPZ}")
+
+
+def compute_msd_sweep(
+    a_values=(1.80, 1.85, 1.92, 1.95, 1.99),
+    N_values=(100, 200, 500, 1000, 2000, 5000, 10_000, 20_000),
+    eps=0.1,
+    n_seeds=8,
+    n_transient=2000,
+    n_sample=10_000,
+    seed_base=42,
+    output_path=MSD_NPZ,
+):
+    """MSD of the mean field for every (a, N) over ``n_seeds`` seeds, with the fit MSD(N) = A/N + B.
+
+    The mean field is h_n = mean(f(x_n)).  Each (a, N, seed) run starts from
+    ``np.random.default_rng(seed_base + 10000 * i_a + 100 * i_N + seed)``, discards
+    ``n_transient`` steps and takes the variance of ``n_sample`` values of h_n.  The
+    fit is an ordinary least-squares line of the seed-averaged MSD against 1/N, so
+    the intercept B is the saturation value and ``fits_B_stderr`` its standard error.
+    With ``n_seeds = 1`` the seed spread is undefined: ``msd_std`` and ``msd_stderr`` are
+    NaN and ``plot_msd`` draws no error bars.
+    """
+    from scipy.stats import linregress
+
+    n_a = len(a_values)
+    n_N = len(N_values)
+    msd_all = np.empty((n_a, n_N, n_seeds), dtype=np.float64)
+
+    for ia, a in enumerate(a_values):
+        print(f"  GCM MSD for a = {a} across {n_N} sizes, {n_seeds} seeds...")
+        for jn, N in enumerate(N_values):
+            for s in range(n_seeds):
+                rng = np.random.default_rng(seed_base + 10000 * ia + 100 * jn + s)
+                x = rng.uniform(-1, 1, N)
+                for _ in range(n_transient):
+                    x = gcm_step(x, a, eps)
+                h_vals = np.empty(n_sample, dtype=np.float64)
+                for t in range(n_sample):
+                    x = gcm_step(x, a, eps)
+                    h_vals[t] = np.mean(logistic(x, a))
+                msd_all[ia, jn, s] = np.var(h_vals)
+
+    msd_mean = np.mean(msd_all, axis=2)
+    if n_seeds > 1:
+        msd_std = np.std(msd_all, axis=2, ddof=1)
+    else:
+        msd_std = np.full((n_a, n_N), np.nan)
+    msd_stderr = msd_std / np.sqrt(n_seeds)
+
+    inv_N = 1.0 / np.array(N_values, dtype=np.float64)
+    fits_A = np.empty(n_a, dtype=np.float64)
+    fits_B = np.empty(n_a, dtype=np.float64)
+    fits_B_stderr = np.empty(n_a, dtype=np.float64)
+    fits_r2 = np.empty(n_a, dtype=np.float64)
+    print("  Saturation fits MSD(N) = A/N + B:")
+    for ia, a in enumerate(a_values):
+        res = linregress(inv_N, msd_mean[ia])
+        fits_A[ia] = res.slope
+        fits_B[ia] = res.intercept
+        fits_B_stderr[ia] = res.intercept_stderr
+        fits_r2[ia] = res.rvalue**2
+        print(
+            f"    a = {a:.2f}: B = {res.intercept:.4e} +/- {res.intercept_stderr:.2e}, "
+            f"A = {res.slope:.4f}, R^2 = {res.rvalue**2:.4f}"
+        )
+
+    payload = {
+        "a_values": np.array(a_values, dtype=np.float64),
+        "N_values": np.array(N_values, dtype=np.int64),
+        "eps": np.array([eps], dtype=np.float64),
+        "n_seeds": np.array([n_seeds], dtype=np.int64),
+        "msd_all": msd_all,
+        "msd_mean": msd_mean,
+        "msd_std": msd_std,
+        "msd_stderr": msd_stderr,
+        "fits_A": fits_A,
+        "fits_B": fits_B,
+        "fits_B_stderr": fits_B_stderr,
+        "fits_r2": fits_r2,
+    }
+    if output_path is not None:
+        FIG_DIR.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(output_path, **payload)
+        print(f"Saved {output_path}")
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +179,7 @@ def compute():
 
 
 def plot_msd(data):
-    """Plot MSD vs N (main result of the paper)."""
+    """Plot MSD vs N: seed-averaged points with seed spread, and the fit A/N + B."""
     import matplotlib.pyplot as plt
 
     from dynachaos.utils.style import (
@@ -113,49 +194,75 @@ def plot_msd(data):
 
     setup()
 
-    N_grid = data["N_grid"]
-    msd_grid = data["msd_grid"]
-    a_vals = data["a_for_msd"]
+    N_values = data["N_values"]
+    a_values = data["a_values"]
+    msd_mean = data["msd_mean"]
+    msd_std = data["msd_std"]
+    fits_A = data["fits_A"]
+    fits_B = data["fits_B"]
+    fits_B_stderr = data["fits_B_stderr"]
+    eps = float(data["eps"][0])
+    n_seeds = int(data["n_seeds"][0])
 
     spec = figure_spec("double")
     fig, ax = plt.subplots(figsize=spec.figsize)
+
     # a is an ordered parameter; a sequential colormap lets the reader read
     # the ordering of the five curves directly instead of decoding an
     # unordered qualitative palette against the legend.
     cmap = plt.get_cmap(CMAP_SEQUENTIAL)
-    n_a = len(a_vals)
-    for ia, a_val in enumerate(a_vals):
+    n_a = len(a_values)
+
+    for ia, a_val in enumerate(a_values):
         sty = series_style(ia)
         color = cmap(ia / max(n_a - 1, 1))
-        ax.loglog(
-            N_grid,
-            msd_grid[ia],
-            label=f"$a = {a_val}$",
+        B_val = fits_B[ia]
+        B_err = fits_B_stderr[ia]
+        label = (
+            rf"$a = {a_val:.2f}$ ($B = {B_val * 1e3:.2f} \pm {B_err * 1e3:.2f} \times 10^{{-3}}$)"
+        )
+        ax.errorbar(
+            N_values,
+            msd_mean[ia],
+            yerr=msd_std[ia] if np.all(np.isfinite(msd_std[ia])) else None,
+            label=label,
             color=color,
             marker=sty["marker"],
-            markersize=3.0,
+            markersize=3.5,
             markerfacecolor=COLORS["offwhite"],
-            markeredgewidth=0.75,
-            linewidth=1.3,
+            markeredgewidth=0.8,
+            linewidth=1.2,
+            capsize=2.0,
+            capthick=0.8,
+        )
+        # Fitted saturation line A/N + B
+        N_dense = np.geomspace(N_values[0], N_values[-1], 100)
+        ax.plot(
+            N_dense, fits_A[ia] / N_dense + B_val, color=color, linestyle=":", lw=0.7, alpha=0.7
         )
 
-    ref_idx = int(np.argmin(np.abs(a_vals - 1.99)))
-    N_ref = np.array([100, 20_000])
-    ref_anchor = msd_grid[ref_idx, 0] * N_grid[0]
+    # Reference 1/N decay anchored at the smallest N, a = 1.99
+    ref_idx = int(np.argmin(np.abs(a_values - 1.99)))
+    N_ref = np.array([N_values[0], N_values[-1]], dtype=np.float64)
+    ref_anchor = msd_mean[ref_idx, 0] * N_values[0]
     ax.loglog(
         N_ref,
         ref_anchor / N_ref,
         color=COLORS["grey"],
         linestyle="--",
         lw=0.8,
-        label=r"$\propto 1/N$ (anchored at $N=100$, $a=1.99$)",
+        label=r"$\propto 1/N$ decay (no saturation)",
     )
 
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.set_xlabel(r"System size $N$")
     ax.set_ylabel(r"MSD $\langle (\delta h)^2 \rangle$")
-    ax.set_title(rf"Mean-field fluctuations, $\varepsilon = {data['eps'][0]}$", loc="left")
-    # Every curve lives in the top decade; the 1/N guide falling away below
-    # ~5e-4 buys nothing but empty panel, so clip the floor.
+    ax.set_title(
+        rf"GCM mean-field fluctuations ($\varepsilon = {eps:.1f}$, {n_seeds} seeds)", loc="left"
+    )
+    # The 1/N guide falling away below ~5e-4 buys nothing but empty panel, so the
+    # floor is set there; the ceiling follows the data.
     ax.set_ylim(5e-4, ax.get_ylim()[1])
     apply_axes_polish(ax, kind="double", title_loc="left", grid=False)
     finalize_legend(
@@ -163,8 +270,8 @@ def plot_msd(data):
         kind="double",
         loc="lower left",
         ncol=2,
-        columnspacing=1.1,
-        fontsize=spec.legend_size + 1.0,
+        columnspacing=0.9,
+        fontsize=spec.legend_size - 0.5,
     )
 
     fig.savefig(GCM_PNG, dpi=600, bbox_inches="tight")
@@ -257,8 +364,15 @@ def main():
         print("Computing GCM results...")
         compute()
         data = safe_load(GCM_NPZ)
-    plot_msd(data)
     plot_distribution(data)
+
+    msd_data = load_or_compute_npz(
+        MSD_NPZ,
+        "GCM MSD sweep",
+        compute_msd_sweep,
+        required_keys=MSD_REQUIRED_KEYS,
+    )
+    plot_msd(msd_data)
 
 
 if __name__ == "__main__":

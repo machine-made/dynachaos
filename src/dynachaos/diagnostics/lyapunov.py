@@ -155,6 +155,67 @@ def lyapunov_spectrum(
     return spectrum_sorted, conv_err[order]
 
 
+def lyapunov_spectrum_blocks(f, jac, x0, n_iter=100_000, n_transient=10_000, n_blocks=20):
+    """Lyapunov spectrum of an N-dimensional map with a block standard error.
+
+    Runs the QR algorithm of :func:`lyapunov_spectrum` and splits the
+    accumulation into ``n_blocks`` equal blocks.  Each block gives one
+    estimate of every exponent.  The spectrum is the mean over the blocks and
+    the standard error is ``std(blocks, ddof=1) / sqrt(n_blocks)``.  Blocks
+    must be longer than the correlation time of the local growth rates.
+
+    Parameters
+    ----------
+    f, jac, x0, n_iter, n_transient
+        As in :func:`lyapunov_spectrum`.  ``n_iter`` is rounded down to a
+        multiple of ``n_blocks``.
+    n_blocks : int
+        Number of blocks, at least 2.
+
+    Returns
+    -------
+    spectrum, se : ndarray, shape (N,)
+        Exponents in descending order and their standard errors.
+
+    Raises
+    ------
+    FloatingPointError
+        If the orbit or the tangent frame stops being finite.
+    """
+    n_iter = positive_int(n_iter, "n_iter")
+    n_transient = nonnegative_int(n_transient, "n_transient")
+    n_blocks = positive_int(n_blocks, "n_blocks")
+    if n_blocks < 2 or n_iter < n_blocks:
+        raise ValueError("n_blocks must be at least 2 and at most n_iter")
+    block_len = n_iter // n_blocks
+    x = np.asarray(x0, dtype=np.float64)
+    dim = len(x)
+
+    for _ in range(n_transient):
+        x = f(x)
+    if not np.all(np.isfinite(x)):
+        raise FloatingPointError("orbit left the finite range during the transient")
+
+    Q = np.eye(dim, dtype=np.float64)
+    blocks = np.empty((n_blocks, dim), dtype=np.float64)
+    for b in range(n_blocks):
+        log_sums = np.zeros(dim, dtype=np.float64)
+        for _ in range(block_len):
+            Q = jac(x) @ Q
+            x = f(x)
+            Q, R = np.linalg.qr(Q)
+            diag = np.abs(np.diag(R))
+            log_sums += np.log(np.where(diag > 0, diag, 1e-300))
+        if not (np.all(np.isfinite(log_sums)) and np.all(np.isfinite(x))):
+            raise FloatingPointError(f"non-finite Lyapunov sums in block {b}")
+        blocks[b] = log_sums / block_len
+
+    order = np.argsort(blocks.mean(axis=0))[::-1]
+    spectrum = blocks.mean(axis=0)[order]
+    se = (blocks.std(axis=0, ddof=1) / np.sqrt(n_blocks))[order]
+    return spectrum, se
+
+
 def lyapunov_max(f, jac, x0, n_iter=100_000, n_transient=10_000, rng=None):
     """Compute only the maximal Lyapunov exponent of an N-dimensional map.
 

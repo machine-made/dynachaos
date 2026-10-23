@@ -29,7 +29,7 @@ _SIG_FIGS = 6
 _SIG_FIGS_Z = 3
 
 
-def _round_to(value: float, sig_figs: int) -> float:
+def _round_to(value: float, sig_figs: int) -> float | None:
     """Round a single float to ``sig_figs`` significant figures."""
     if not np.isfinite(value):
         return None
@@ -38,17 +38,17 @@ def _round_to(value: float, sig_figs: int) -> float:
     return float(f"{value:.{sig_figs}g}")
 
 
-def _round_sig(value: float) -> float:
+def _round_sig(value: float) -> float | None:
     """Round a single float to 6 significant figures."""
     return _round_to(value, _SIG_FIGS)
 
 
-def _round_list(values: np.ndarray) -> list[float]:
+def _round_list(values: np.ndarray) -> list[float | None]:
     """Round a 1-D array to 6 significant figures, as a plain list."""
     return [_round_sig(float(v)) for v in values]
 
 
-def _round_grid(values: np.ndarray) -> list[list[float]]:
+def _round_grid(values: np.ndarray) -> list[list[float | None]]:
     """Round a 2-D z-grid to the coarser 3 significant figures a colour ramp
     and hover readout actually need, as nested lists."""
     return [[_round_to(float(v), _SIG_FIGS_Z) for v in row] for row in values]
@@ -268,38 +268,57 @@ def export_correlation_dimension() -> dict[str, Any]:
     d2 = _require(npz, "D2", source)
     d2_err = _require(npz, "D2_err", source)
     n = d.shape[0]
+
+    valid = npz["valid_mask"] if "valid_mask" in npz else np.ones_like(d, dtype=bool)
+    d2_curve = np.where(valid, d2, np.nan)
+    d2_err_curve = np.where(valid, d2_err, np.nan)
+
+    traces = [
+        {
+            "name": "D₂",
+            "x": _round_list(d),
+            "y": _round_list(d2_curve),
+            "yerr": _round_list(d2_err_curve),
+        }
+    ]
+    if "failed_mask" in npz and np.any(npz["failed_mask"]):
+        failed = npz["failed_mask"]
+        traces.append(
+            {
+                "name": "Failed fit (D₂ < 1)",
+                "x": _round_list(d[failed]),
+                "y": _round_list(d2[failed]),
+            }
+        )
+
     return {
         "figure": source,
         "kind": "lines",
         "decimation": _no_decimation(n),
         "axes": {"x": {"label": "D"}, "y": {"label": "Correlation dimension D₂"}},
+        "marks": [{"axis": "y", "value": 1.0, "label": "D₂ = 1"}],
         "panels": [
             {
                 "title": "Delayed logistic map, α = 0.3",
-                "traces": [
-                    {
-                        "name": "D₂",
-                        "x": _round_list(d),
-                        "y": _round_list(d2),
-                        "yerr": _round_list(d2_err),
-                    }
-                ],
+                "traces": traces,
             }
         ],
     }
 
 
 def export_lyapunov_vs_d() -> dict[str, Any]:
-    """sec05_oscillation/lyapunov_vs_D: two-component Lyapunov spectrum vs D."""
+    """sec05_oscillation/lyapunov_vs_D: two-component Lyapunov spectrum and power spectrum."""
     source = "sec05_oscillation/lyapunov_vs_D"
     npz = _load("sec05_oscillation", "lyapunov_vs_D")
     d = _require(npz, "D", source)
     spectra = _require(npz, "spectra", source)
     spectra_err = _require(npz, "spectra_err", source)
     n = d.shape[0]
-    traces = []
+    decimation = _no_decimation(n)
+
+    traces_lyap = []
     for col in range(spectra.shape[1]):
-        traces.append(
+        traces_lyap.append(
             {
                 "name": _lam(col + 1),
                 "x": _round_list(d),
@@ -307,19 +326,67 @@ def export_lyapunov_vs_d() -> dict[str, Any]:
                 "yerr": _round_list(spectra_err[:, col]),
             }
         )
+
+    panels: list[dict[str, Any]] = [
+        {
+            "title": "Lyapunov spectrum (α = 0.3)",
+            "axes": {"x": {"label": "Drive amplitude D"}, "y": {"label": "Lyapunov exponent"}},
+            "marks": [
+                {"axis": "x", "value": _neimark_sacker_dc(ALPHA), "label": "D_c"},
+                {"axis": "y", "value": 0.0, "label": "λ = 0"},
+            ],
+            "traces": traces_lyap,
+        }
+    ]
+
+    if "freqs_170" in npz and "psd_170" in npz:
+        freqs_170 = npz["freqs_170"]
+        psd_170 = npz["psd_170"]
+        freqs_186 = _require(npz, "freqs_186", source)
+        psd_186 = _require(npz, "psd_186", source)
+
+        psd_db_170 = 10.0 * np.log10(np.maximum(psd_170, 1e-6))
+        psd_db_186 = 10.0 * np.log10(np.maximum(psd_186, 1e-6))
+
+        n_bins = 1000
+        x_170, y_170 = _minmax_decimate(freqs_170, psd_db_170, n_bins)
+        x_186, y_186 = _minmax_decimate(freqs_186, psd_db_186, n_bins)
+        if freqs_170.shape != freqs_186.shape:
+            raise SystemExit("spectra differ in length, one decimation record cannot describe both")
+        decimation = _minmax_bin_decimation(freqs_170.shape[0], n_bins)
+        decimation["note"] = (
+            "the two power-spectrum traces are min/max-decimated to 1000 bins; "
+            "the Lyapunov traces are not decimated"
+        )
+
+        traces_psd = [
+            {"name": "D = 1.70", "x": _round_list(x_170), "y": _round_list(y_170)},
+            {"name": "D = 1.86", "x": _round_list(x_186), "y": _round_list(y_186)},
+        ]
+        panels.append(
+            {
+                "title": "Power spectrum S(f) of x_n",
+                "axes": {
+                    "x": {"label": "Frequency f (dimensionless)"},
+                    "y": {"label": "Power spectrum S(f) (dB)"},
+                },
+                "marks": [
+                    {"axis": "x", "value": 0.2254, "label": "f₀"},
+                ],
+                "traces": traces_psd,
+            }
+        )
+
     return {
         "figure": source,
         "kind": "lines",
-        "decimation": _no_decimation(n),
-        "axes": {"x": {"label": "D"}, "y": {"label": "Lyapunov exponent"}},
-        # The caption promises a dashed line at the Neimark-Sacker bifurcation.
-        # Same closed form and same alpha as the matplotlib figure, so the
-        # interactive view cannot drift from the static one.
+        "decimation": decimation,
+        "axes": {"x": {"label": "D or Frequency f"}, "y": {"label": "Lyapunov exponent or S(f)"}},
         "marks": [
             {"axis": "x", "value": _neimark_sacker_dc(ALPHA), "label": "D_c"},
             {"axis": "y", "value": 0.0, "label": "λ = 0"},
         ],
-        "panels": [{"title": "Delayed logistic map, α = 0.3", "traces": traces}],
+        "panels": panels,
     }
 
 
@@ -435,18 +502,19 @@ def export_arnold_tongues(max_axis: int = 600) -> dict[str, Any]:
 
 
 def export_phase_diagram() -> dict[str, Any]:
-    """sec09_pattern/phase_diagram: activity maps over (a, epsilon), full resolution.
+    """sec09_pattern/phase_diagram: spatial activity over (a, epsilon), full resolution.
 
-    Keys are ``a``, ``eps``, ``lam``, ``spatial_activity`` (plus a
-    ``schema_version`` int that is not chart data and is not emitted).
+    Reads ``a``, ``eps`` and ``spatial_activity``, the field the published figure
+    plots. The cache also holds ``lam``, which is the temporal variance of the
+    central site (not a Lyapunov exponent); it is not shown, as the figure does
+    not show it.
     """
     source = "sec09_pattern/phase_diagram"
     npz = _load("sec09_pattern", "phase_diagram")
     a = _require(npz, "a", source)
     eps = _require(npz, "eps", source)
-    lam = _require(npz, "lam", source)
     spatial_activity = _require(npz, "spatial_activity", source)
-    n = lam.shape[0] * lam.shape[1]
+    n = spatial_activity.shape[0] * spatial_activity.shape[1]
     return {
         "figure": source,
         "kind": "heatmap",
@@ -454,23 +522,13 @@ def export_phase_diagram() -> dict[str, Any]:
         "axes": {"x": {"label": "Nonlinearity a"}, "y": {"label": "Coupling ε"}},
         "panels": [
             {
-                "title": "Largest Lyapunov exponent",
-                "zlabel": "λ₁",
-                # Signed quantity: a diverging ramp pinned at zero keeps the
-                # locked / marginal / chaotic reading the rest of the site uses.
-                "cmap": "signed",
-                "x": _round_list(a),
-                "y": _round_list(eps),
-                "z": _round_grid(lam),
-            },
-            {
                 "title": "Spatial activity map",
-                "zlabel": "Spatial activity",
+                "zlabel": "⟨|x_i − x_(i−1)|⟩",
                 "cmap": "viridis",
                 "x": _round_list(a),
                 "y": _round_list(eps),
                 "z": _round_grid(spatial_activity),
-            },
+            }
         ],
     }
 
@@ -547,38 +605,6 @@ def export_phase_diagram_sec03() -> dict[str, Any]:
     }
 
 
-def export_collective_lyapunov() -> dict[str, Any]:
-    """sec10_gcm/collective_lyapunov: collective Lyapunov exponent lambda_c vs a.
-
-    ``plot_collective`` (gcm_clusters.py) shades a "sustained lambda_c > 0"
-    region using ``sustained_positive_mask`` -- a threshold-plus-run-length
-    scan over the data, computed at draw time. That derived mask is not
-    reproduced here (it would be a second implementation of the same logic,
-    risking drift); only the raw line and the lambda=0 reference the mask is
-    drawn against are exported.
-    """
-    source = "sec10_gcm/collective_lyapunov"
-    npz = _load("sec10_gcm", "collective_lyapunov")
-    a_values = _require(npz, "a_values", source)
-    lyap_c = _require(npz, "lyap_c", source)
-    eps = float(_require(npz, "eps", source)[0])
-    n_count = int(_require(npz, "N", source)[0])
-    n = a_values.shape[0]
-    return {
-        "figure": source,
-        "kind": "lines",
-        "decimation": _no_decimation(n),
-        "axes": {"x": {"label": "a"}, "y": {"label": "λ_c"}},
-        "marks": [{"axis": "y", "value": 0.0, "label": "λ_c = 0"}],
-        "panels": [
-            {
-                "title": f"Collective Lyapunov exponent, ε = {eps:g}, N = {n_count}",
-                "traces": [{"name": "λ_c", "x": _round_list(a_values), "y": _round_list(lyap_c)}],
-            }
-        ],
-    }
-
-
 def export_double_staircase(max_points: int = 4000) -> dict[str, Any]:
     """sec06_three_torus/double_staircase: rho_theta and rho_phi vs D.
 
@@ -615,15 +641,7 @@ def export_double_staircase(max_points: int = 4000) -> dict[str, Any]:
 
 
 def export_comoving_lyapunov() -> dict[str, Any]:
-    """sec08_sti/comoving_lyapunov: co-moving Lyapunov exponent lambda(v).
-
-    ``plot`` (comoving_figure.py) masks entries with ``lam_v > -9.5`` to NaN --
-    a sentinel filter for missing/invalid samples, not a derived quantity --
-    and reproduces that filter here so the interactive line does not show
-    placeholder values. The per-series zero-crossing markers it also draws
-    (linear-interpolated crossing points) are a derived quantity and are not
-    reproduced; only the lambda=0 reference they are drawn against is kept.
-    """
+    """sec08_sti/comoving_lyapunov: co-moving Lyapunov exponent lambda(v)."""
     source = "sec08_sti/comoving_lyapunov"
     npz = _load("sec08_sti", "comoving_lyapunov")
     v_values = _require(npz, "v_values", source)
@@ -636,19 +654,28 @@ def export_comoving_lyapunov() -> dict[str, Any]:
     }
     traces = []
     for a in a_values:
-        key = f"lambda_a{a:.2f}"
-        lam_v = _require(npz, key, source)
+        lam_v = _require(npz, f"lambda_a{a:.2f}", source)
         valid = lam_v > -9.5
         y = np.where(valid, lam_v, np.nan)
         label = a_labels.get(float(a), "")
         name = f"a = {a:.2f} ({label})" if label else f"a = {a:.2f}"
         traces.append({"name": name, "x": _round_list(v_values), "y": _round_list(y)})
+
+    marks: list[dict[str, Any]] = [{"axis": "y", "value": 0.0, "label": "λ = 0"}]
+    for a in a_values:
+        zc_key = f"zc_a{a:.2f}"
+        if zc_key in npz:
+            zc = npz[zc_key]
+            if zc.size == 1 and np.isfinite(zc[0]):
+                mark_label = f"v_p({a:.2f}) ≈ {zc[0]:.2f}"
+                marks.append({"axis": "x", "value": _round_sig(float(zc[0])), "label": mark_label})
+
     return {
         "figure": source,
         "kind": "lines",
         "decimation": _no_decimation(n),
         "axes": {"x": {"label": "Velocity v (sites/iteration)"}, "y": {"label": "λ(v)"}},
-        "marks": [{"axis": "y", "value": 0.0, "label": "λ = 0"}],
+        "marks": marks,
         "panels": [{"title": "Co-moving Lyapunov exponent, logistic CML", "traces": traces}],
     }
 
@@ -707,8 +734,8 @@ def export_xz_projections(max_points: int = 12000) -> dict[str, Any]:
     db_values = _require(npz, "DB_values", source)
     labels = _require(npz, "labels", source)
     panels = []
-    n_from = None
-    n_to = None
+    n_from: int = 0
+    n_to: int = 0
     for db, label in zip(db_values, labels, strict=True):
         key = f"DB_{db}_xz"
         xz = _require(npz, key, source)
@@ -853,7 +880,6 @@ EXPORTERS: tuple[tuple[str, str, Any], ...] = (
     ("sec09_pattern", "phase_diagram", export_phase_diagram),
     ("sec04_doubling", "map_IV_lyapunov", export_map_iv_lyapunov),
     ("sec03_transition", "phase_diagram", export_phase_diagram_sec03),
-    ("sec10_gcm", "collective_lyapunov", export_collective_lyapunov),
     ("sec06_three_torus", "double_staircase", export_double_staircase),
     ("sec08_sti", "comoving_lyapunov", export_comoving_lyapunov),
     ("sec03_transition", "attractors", export_attractors_sec03),

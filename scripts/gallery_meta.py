@@ -113,17 +113,27 @@ CAPTIONS: dict[str, str] = {
     "sec10_gcm/gcm_clusters.png": (
         "Cluster states in a globally coupled map, showing a partially ordered regime."
     ),
-    "sec10_gcm/collective_lyapunov.png": (
-        "Collective Lyapunov exponent of the mean field in a globally coupled map, marking "
-        "collective chaos."
+    "sec10_gcm/gcm_lyapunov_max.png": (
+        "Largest Lyapunov exponent of the site dynamics of a globally coupled map against the "
+        "nonlinearity, for three system sizes."
+    ),
+    "sec10_gcm/gcm_collective_fsle.png": (
+        "Finite-size Lyapunov exponent of the mean field of a heterogeneous globally coupled map: "
+        "the microscopic exponent below a scale that shrinks with system size, a slower collective "
+        "exponent above it."
     ),
     "sec11_diagnostics/test01_sweep.png": (
         "The 0-1 test statistic for the logistic map, near 0 in periodic windows and near 1 "
         "in chaotic bands."
     ),
-    "sec11_diagnostics/sali_comparison.png": (
-        "SALI time series for the coupled delayed logistic map across regimes from "
-        "quasiperiodic motion to chaos."
+    "sec11_diagnostics/alignment_three_torus.png": (
+        "SALI and GALI_2 to GALI_4 over 10^6 iterates for a torus, a partially locked orbit and "
+        "a chaotic orbit of the coupled delayed logistic map, on a logarithmic iteration axis."
+    ),
+    "sec11_diagnostics/agreement_roc.png": (
+        "ROC curves of the 0-1 test, permutation entropy and the RQA measures DET and LAM against "
+        "the sign of the largest Lyapunov exponent, for the logistic, delayed logistic and "
+        "coupled delayed logistic maps."
     ),
     "sec11_diagnostics/permutation_entropy.png": (
         "Permutation entropy for the logistic and delayed logistic maps, low in regular "
@@ -154,7 +164,8 @@ CAPTIONS: dict[str, str] = {
     ),
     "sec12_intermittency/sti_spine.png": (
         "Spatiotemporal intermittency in a coupled map lattice: turbulent-fraction onset and "
-        "an exponential laminar cluster-size tail."
+        "power-law, exponential and truncated power-law fits to the laminar-length tail at "
+        "three couplings."
     ),
 }
 

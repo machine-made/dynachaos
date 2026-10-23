@@ -1,6 +1,5 @@
-# Figure: spacetime diagrams of a coupled map lattice (Kaneko 1985 Model C,
-# logistic local map) at three couplings spanning frozen, pattern, and
-# turbulent regimes -- shown here via each snapshot's spatial variance.
+# Reduced preview (N = 60, 50 steps). Full figure: dynachaos run sec08_sti
+# Spacetime diagrams of a coupled map lattice (Kaneko 1985 Model C, logistic local map).
 from dynachaos.cml.spatiotemporal import model_C_f, simulate_cml
 
 N = 60

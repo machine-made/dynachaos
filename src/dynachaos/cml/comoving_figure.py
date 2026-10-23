@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """
-comoving_figure: Co-moving Lyapunov exponent for coupled logistic CML.
+comoving_figure: Windowed co-moving Lyapunov exponent for the coupled logistic CML.
 
-Computes lambda(v) — the co-moving Lyapunov exponent — for a coupled
+Computes lambda(v) -- the co-moving Lyapunov exponent -- for a coupled
 map lattice with logistic local dynamics f(x) = 1 - a*x^2 at three
 values of the nonlinearity parameter a spanning pattern selection,
-defect turbulence, and fully developed turbulence.
+defect turbulence, and fully developed turbulence.  The definition is the
+windowed one of Kaneko (1986) and Deissler & Kaneko (1987): the growth rate
+of the perturbation norm summed over a window of 2 w + 1 sites that moves
+with velocity v, renormalised at every step.
 
-Zero crossings of lambda(v) identify the propagation velocities of
-information in the spatiotemporal chaotic state.
+The lattice is large (N = 3000) and the averaging time long (T = 1000) so that
+the moving window never wraps around the periodic domain (largest site index
+500 + 1000 + 15 = 1515 < 3000).  v is sampled densely on [0, 1] (51 points) to
+resolve the zero crossings v_p of lambda(v), which mark the propagation
+velocity of information in the spatiotemporal chaotic state.
 
 CML model:
     x_{n+1}(i) = f(x_n(i)) + (eps/2)[f(x_n(i+1)) + f(x_n(i-1)) - 2 f(x_n(i))]
 
-Parameters: N=500, eps=0.3
+Parameters: N=3000, T=1000, w=15, eps=0.3
 
 OUTPUTS: figures/sec08_sti/comoving_lyapunov.npz,
          figures/sec08_sti/comoving_lyapunov.png
@@ -34,46 +40,60 @@ OUTPUT_PNG = FIG_DIR / "comoving_lyapunov.png"
 # ---------------------------------------------------------------------------
 
 
-def compute():
-    """Compute co-moving Lyapunov exponent for three values of a."""
-    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_spectrum_logistic
+def compute(
+    a_values=(1.70, 1.85, 1.95),
+    eps=0.3,
+    N=3000,
+    T=1000,
+    n_transient=2000,
+    w=15,
+    i0=500,
+    n_v=51,
+    seed=42,
+):
+    """Compute the windowed co-moving Lyapunov exponent for each a and save the cache.
+
+    Each a value gets its own random initial lattice, drawn with seed ``seed + index``.
+    Besides ``lambda_a<a>`` the cache holds the zero crossings ``zc_a<a>`` of lambda(v).
+    """
+    from dynachaos.diagnostics.comoving_lyapunov import (
+        comoving_lyapunov_windowed_logistic,
+        comoving_zero_crossings,
+    )
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-    N = 500
-    eps = 0.3
-    v_values = np.linspace(-1.5, 1.5, 301)
-    n_iter = 100_000
-    n_transient = 20_000
-
-    a_values = [1.70, 1.85, 1.95]
-    a_labels = ["pattern selection", "defect turbulence", "fully developed turbulence"]
-
-    all_lambda = {}
-    for ia, (a, label) in enumerate(zip(a_values, a_labels)):
-        print(f"a={a} ({label})...")
-        lam_v = comoving_lyapunov_spectrum_logistic(
+    v_values = np.linspace(0.0, 1.0, n_v)
+    payload = {
+        "v_values": v_values,
+        "a_values": np.array(a_values, dtype=np.float64),
+        "eps": np.array([eps], dtype=np.float64),
+        "N": np.array([N], dtype=np.int64),
+        "T": np.array([T], dtype=np.int64),
+        "w": np.array([w], dtype=np.int64),
+        "i0": np.array([i0], dtype=np.int64),
+    }
+    for idx, a in enumerate(a_values):
+        print(f"Computing co-moving spectrum for a = {a}...")
+        lam = comoving_lyapunov_windowed_logistic(
             a=a,
             eps=eps,
             N=N,
+            T=T,
             v_values=v_values,
-            n_iter=n_iter,
             n_transient=n_transient,
+            w=w,
+            i0=i0,
+            seed=seed + idx,
         )
-        all_lambda[f"lambda_a{a:.2f}"] = lam_v
+        zero_crossings = comoving_zero_crossings(v_values, lam)
+        print(f"  a = {a}: zero crossings at {zero_crossings}")
+        payload[f"lambda_a{a:.2f}"] = lam
+        payload[f"zc_a{a:.2f}"] = np.array(zero_crossings, dtype=np.float64)
 
-        # Save iteratively after each a value
-        np.savez_compressed(
-            OUTPUT_NPZ,
-            v_values=v_values,
-            a_values=np.array(a_values[: ia + 1]),
-            eps=np.array([eps]),
-            N=np.array([N]),
-            **{k: v for k, v in all_lambda.items()},
-        )
-        print(f"  Saved checkpoint ({ia + 1}/{len(a_values)})")
-
+    np.savez_compressed(OUTPUT_NPZ, **payload)
     print(f"Saved {OUTPUT_NPZ}")
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -82,92 +102,67 @@ def compute():
 
 
 def plot(data):
-    """Plot lambda(v) vs v for each nonlinearity parameter."""
+    """Plot lambda(v) vs v for each nonlinearity parameter, with the zero crossings marked."""
     import matplotlib.pyplot as plt
 
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
     from dynachaos.utils.style import (
         COLORS,
         apply_axes_polish,
         figure_spec,
         finalize_legend,
         reference_line,
-        series_style,
         setup,
     )
 
     setup()
 
-    v_values = data["v_values"]
+    v = data["v_values"]
     a_values = data["a_values"]
+    eps = float(data["eps"][0])
+    N = int(data["N"][0])
 
     spec = figure_spec("double")
     fig, ax = plt.subplots(figsize=spec.figsize)
 
-    a_labels = {
-        1.70: "pattern selection",
-        1.85: "defect turbulence",
-        1.95: "fully developed turbulence",
+    colors = {1.70: COLORS["blue"], 1.85: COLORS["black"], 1.95: COLORS["red"]}
+    labels = {
+        1.70: r"$a = 1.70$ (pattern selection)",
+        1.85: r"$a = 1.85$ (defect turbulence)",
+        1.95: r"$a = 1.95$ (fully developed turbulence)",
     }
 
-    y_min = np.inf
-    y_max = -np.inf
-    crossings = []
-    for i, a in enumerate(a_values):
-        key = f"lambda_a{a:.2f}"
-        lam_v = np.array(data[key], dtype=float)
-        valid = lam_v > -9.5
-        lam_plot = lam_v.copy()
-        lam_plot[~valid] = np.nan
-        sty = series_style(i)
-        sty.pop("marker", None)
-        sty.pop("markersize", None)
-        sty.pop("markerfacecolor", None)
-        sty.pop("markeredgewidth", None)
-        label_str = a_labels.get(float(a), "")
-        ax.plot(v_values, lam_plot, label=rf"$a = {a:.2f}$ ({label_str})", **sty)
-        if np.any(valid):
-            y_min = min(y_min, np.nanmin(lam_plot[valid]))
-            y_max = max(y_max, np.nanmax(lam_plot[valid]))
+    reference_line(ax, 0.0, axis="y", lw=0.6, alpha=0.7)
 
-        for j in range(len(lam_v) - 1):
-            if not (valid[j] and valid[j + 1]):
-                continue
-            if lam_v[j] * lam_v[j + 1] < 0:
-                v_cross = (v_values[j] * abs(lam_v[j + 1]) + v_values[j + 1] * abs(lam_v[j])) / (
-                    abs(lam_v[j]) + abs(lam_v[j + 1])
+    for a in a_values:
+        a = float(a)
+        lam = np.asarray(data[f"lambda_a{a:.2f}"], dtype=float)
+        col = colors.get(a, COLORS["black"])
+        ax.plot(v, lam, color=col, lw=1.1, marker="o", ms=2.5, label=labels.get(a, rf"$a = {a}$"))
+
+        # Zero crossings with v > 0.2 are the primary propagation speed v_p.
+        for zc in comoving_zero_crossings(v, lam):
+            if zc > 0.2:
+                reference_line(ax, zc, axis="x", lw=0.7, ls="--", color=col)
+                ax.text(
+                    zc + 0.015,
+                    0.20 if a == 1.95 else 0.12,
+                    rf"$v_p \approx {zc:.3f}$",
+                    color=col,
+                    fontsize=spec.tick_size - 1,
+                    ha="left",
                 )
-                ax.axvline(v_cross, color=sty["color"], lw=1.4, ls="--", alpha=0.9, zorder=4)
-                if v_cross > 0:
-                    crossings.append((a, sty["color"], v_cross))
 
-    for k, (a, color, v_cross) in enumerate(sorted(crossings, key=lambda c: -c[2])):
-        ax.text(
-            0.98,
-            0.97 - 0.06 * k,
-            rf"$v_p(a={a:.2f}) \approx {v_cross:.2f}$",
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize="small",
-            color=color,
-        )
-
-    reference_line(ax, 0, axis="y", label=None)
-    ax.set_xlabel(r"Velocity $v$ (sites/iteration)")
-    ax.set_ylabel(r"$\lambda(v)$")
-    if np.isfinite(y_min) and np.isfinite(y_max):
-        ax.set_ylim(y_min - 0.15, y_max + 0.08)
-    ax.set_title(r"Co-moving Lyapunov exponent, logistic CML", loc="left")
-
-    apply_axes_polish(ax, kind="double", title_loc="left", grid=False)
-    finalize_legend(
-        ax,
-        kind="double",
-        loc="lower center",
-        frameon=True,
-        framealpha=1.0,
-        facecolor=COLORS["offwhite"],
+    ax.set_xlabel(r"Velocity $v$ (lattice sites per iteration)")
+    ax.set_ylabel(r"Co-moving Lyapunov exponent $\lambda(v)$")
+    ax.set_title(
+        rf"Windowed co-moving Lyapunov exponent ($\varepsilon = {eps:.1f}$, $N = {N}$)",
+        loc="left",
     )
+    ax.set_xlim(v[0], v[-1])
+    ax.set_ylim(-0.35, 0.45)
+    apply_axes_polish(ax, kind="double", title_loc="left")
+    finalize_legend(ax, kind="single", loc="lower left")
 
     fig.savefig(OUTPUT_PNG, dpi=600, bbox_inches="tight")
     plt.close(fig)

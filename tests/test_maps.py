@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from dynachaos.cml.correlation_figure import _fit_correlation_length
-from dynachaos.cml.gcm_clusters import broad_positive_mask, compute_clusters, compute_collective
+from dynachaos.cml.correlation_figure import fit_correlation_length
+from dynachaos.cml.gcm_clusters import compute_clusters
 from dynachaos.cml.pattern_dynamics import SPACE_CASES
 from dynachaos.cml.primitives import (
     cluster_labels_by_tolerance,
@@ -61,6 +61,7 @@ from dynachaos.maps.delayed_logistic import (
 from dynachaos.maps.delayed_logistic import (
     compute_lyapunov_spectrum as compute_delayed_lyapunov_spectrum,
 )
+from dynachaos.maps.fractalization import dimension_window_statistics
 from dynachaos.maps.henon import henon, henon_jac
 from dynachaos.maps.intermittency import (
     LOGISTIC_TYPE_I_ONSET,
@@ -136,6 +137,148 @@ def test_sec02_circle_map_cache_preserves_decreasing_staircase_and_tongues():
     np.testing.assert_allclose(tongue_rho[0], Omega, atol=1e-10)
     assert np.all((-1e-6 <= tongue_rho) & (tongue_rho <= 1.0 + 1e-6))
     assert zero_lock_counts[-1] > zero_lock_counts[0]
+
+
+def test_sec02_k_inf_cache_brackets_the_one_fifth_lock_onset():
+    from dynachaos.maps.circle_map import is_locked, rotation_number
+
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec02_circle_map"
+    with np.load(figure_dir / "k_inf.npz", allow_pickle=False) as data:
+        k_inf = float(data["K_inf"][0])
+        uncertainty = float(data["uncertainty"][0])
+        k_inf_long = float(data["k_inf_long"][0])
+        k_inf_shift = float(data["k_inf_shift"][0])
+        k_low = float(data["k_low_final"][0])
+        k_high = float(data["k_high_final"][0])
+        k_low_init = float(data["k_low_init"][0])
+        k_high_init = float(data["k_high_init"][0])
+        omega = float(data["Omega"][0])
+
+    assert omega == pytest.approx(0.25)
+    assert k_low <= k_inf <= k_high
+    # The uncertainty is the bisection half-width plus the shift from a 4x longer transient.
+    assert k_inf_shift == pytest.approx(k_inf_long - k_inf)
+    assert uncertainty == pytest.approx(0.5 * (k_high - k_low) + abs(k_inf_shift))
+    assert uncertainty < 1e-8
+    assert k_inf == pytest.approx(0.1567168, abs=1e-7)
+    assert k_low_init < k_inf < k_high_init
+
+    # The bracket is a true lock edge: locked on its upper end, free on its lower end.
+    assert is_locked(k_high, D=omega)
+    assert not is_locked(k_low, D=omega)
+    assert is_locked(k_inf + 1e-4, D=omega)
+    assert not is_locked(k_inf - 1e-4, D=omega)
+
+    # Inside the lock the rotation number is 1/5 to round-off; outside it is above 1/5
+    # and grows as the square root of the distance to the saddle-node onset.
+    assert rotation_number(k_inf + 1e-4, n_transient=5000, n_iter=50_000) == pytest.approx(
+        0.2, abs=1e-12
+    )
+    assert rotation_number(k_inf - 1e-4, n_transient=5000, n_iter=50_000) - 0.2 > 5e-4
+
+
+def test_sec03_basin_cache_is_mirror_symmetric_with_nested_stripes():
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec03_transition"
+    with np.load(figure_dir / "basins.npz", allow_pickle=False) as data:
+        windows = {
+            suffix: (data[f"x{suffix}"], data[f"y{suffix}"], data[f"basin{suffix}"])
+            for suffix in ("", "_zoom1", "_zoom2")
+        }
+        rects = [data["rect_zoom1"], data["rect_zoom2"]]
+        A = float(data["A"][0])
+        D = float(data["D"][0])
+
+    assert A == pytest.approx(1.35344)
+    assert D == pytest.approx(0.1)
+    for (x, y, basin), (n_expected) in zip(windows.values(), (800, 500, 500), strict=True):
+        assert basin.shape == (n_expected, n_expected)
+        assert x.size == y.size == n_expected
+        # No orbit diverges at this (A, D) and both asymmetric cycles are reached.
+        assert not np.any(basin == -1)
+        assert {1, 2} <= set(np.unique(basin).tolist())
+        # Label 0 (equidistant from both cycles) marks exactly the grid cells on y = x.
+        on_diagonal = np.abs(x[None, :] - y[:, None]) < 1e-12
+        assert np.array_equal(basin == 0, on_diagonal)
+
+    # The two period-32 cycles are mirror images about y = x, so swapping the
+    # initial coordinates must swap the labels 1 and 2 on every symmetric window.
+    for suffix in ("", "_zoom2"):
+        basin = windows[suffix][2]
+        swapped = np.where(basin == 1, 2, np.where(basin == 2, 1, basin))
+        assert np.array_equal(basin.T, swapped)
+    assert (windows[""][2] == 1).sum() == (windows[""][2] == 2).sum()
+
+    # The zoom windows are the boxes drawn on the panels, and the stripes persist at
+    # the second magnification: many label changes along a row through the box.
+    assert rects[0] == pytest.approx([-0.16, 0.04, -0.11, 0.09])
+    assert rects[1] == pytest.approx([-0.07, -0.03, -0.07, -0.03])
+    assert windows["_zoom1"][0][[0, -1]] == pytest.approx(rects[0][:2])
+    assert windows["_zoom2"][1][[0, -1]] == pytest.approx(rects[1][2:])
+    for suffix, minimum_changes in (("_zoom1", 20), ("_zoom2", 10)):
+        basin = windows[suffix][2]
+        changes = np.count_nonzero(np.diff(basin[basin.shape[0] // 2]) != 0)
+        assert changes >= minimum_changes
+
+
+def test_compute_map_I_scan_matches_direct_lyapunov_spectrum(tmp_path):
+    scan_D = np.array([2.15, 2.17])
+    payload = compute_map_I(
+        D_values=np.array([2.11]),
+        n_transient=2,
+        n_plot=4,
+        scan_D=scan_D,
+        scan_n_transient=50,
+        scan_n_iter=200,
+        output_path=tmp_path / "map_I_scan.npz",
+    )
+
+    assert payload["A"].tolist() == [0.4]
+    np.testing.assert_array_equal(payload["scan_D"], scan_D)
+    assert payload["scan_lyap"].shape == (2, 3)
+    from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
+
+    for D, row in zip(scan_D, payload["scan_lyap"], strict=True):
+        expected = lyapunov_spectrum(
+            lambda s, _D=D: map_I(s, 0.4, _D),
+            lambda s, _D=D: map_I_jac(s, 0.4, _D),
+            np.array([0.5, 0.5, 0.5]),
+            n_iter=200,
+            n_transient=50,
+        )
+        np.testing.assert_allclose(row, expected, rtol=1e-12)
+
+
+def test_sec04_map_I_cache_holds_three_attractors_and_the_doubling_window_scan():
+    from dynachaos.maps.torus_doubling import map_I_lyapunov_scan
+
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec04_doubling"
+    with np.load(figure_dir / "map_I_attractors.npz", allow_pickle=False) as data:
+        D_values = data["D_values"]
+        A = float(data["A"][0])
+        scan_D = data["scan_D"]
+        scan_lyap = data["scan_lyap"]
+        trajectories = [data[f"D_{D}_traj"] for D in D_values]
+
+    assert A == pytest.approx(0.4)
+    np.testing.assert_allclose(D_values, [2.11, 2.16, 2.19])
+    for traj in trajectories:
+        assert traj.shape == (100_000, 3)
+        assert np.all(np.isfinite(traj))
+        assert np.all(np.abs(traj) < 2.0)
+
+    # Scan over the doubling window D in [2.150, 2.175], 26 values, three exponents each.
+    np.testing.assert_allclose(scan_D, np.linspace(2.150, 2.175, 26))
+    assert scan_lyap.shape == (26, 3)
+    assert np.all(np.isfinite(scan_lyap))
+    # The scan shows no resolved chaos (lambda_1 < 0.002) and a contracting third direction.
+    assert np.max(scan_lyap[:, 0]) < 0.002
+    assert np.all(scan_lyap[:, 2] < -0.05)
+
+    # Independent recomputation at the three displayed D: the 1x torus has lambda_1 = 0
+    # and chaos beyond D_c = 2.163 has lambda_1 > 0.
+    spectra = map_I_lyapunov_scan(A, np.array([2.11, 2.19]), n_transient=20_000, n_iter=100_000)
+    assert abs(spectra[0, 0]) < 5e-4
+    assert spectra[1, 0] > 2e-3
 
 
 def test_coupled_logistic_shapes():
@@ -500,14 +643,76 @@ def test_compute_delayed_locking_rejects_rounded_key_collisions():
         )
 
 
+def test_sec05_lyapunov_sweep_and_power_spectra_cache():
+    with np.load("figures/sec05_oscillation/lyapunov_vs_D.npz", allow_pickle=False) as data:
+        D = data["D"]
+        spectra = data["spectra"]
+        spectra_err = data["spectra_err"]
+        A = float(data["A"][0])
+        spectrum = {tag: (data[f"freqs_{tag}"], data[f"psd_{tag}"]) for tag in ("170", "186")}
+
+    assert A == pytest.approx(0.3)
+    np.testing.assert_allclose(D, np.linspace(1.20, 2.20, 2000))
+    assert spectra.shape == (2000, 2)
+    assert spectra_err.shape == (2000, 2)
+    assert np.all(np.isfinite(spectra))
+    lam1, lam2 = spectra[:, 0], spectra[:, 1]
+
+    # Below the Neimark-Sacker point D_c = (3 - 2A) / (4 (1 - A)^2) the fixed point is
+    # stable (lambda_1 < 0); the smooth torus has lambda_1 = 0 and a contracting lambda_2.
+    D_c = (3.0 - 2.0 * A) / (4.0 * (1.0 - A) ** 2)
+    assert np.all(lam1[D < D_c] < 0.0)
+    torus = (D > 1.26) & (D < 1.75)
+    assert np.all(np.abs(lam1[torus]) < 5e-4)
+    assert np.all(lam2[torus] < -0.01)
+    assert lam1.max() > 0.05
+
+    # Power spectra: normalised to a maximum of 1, a single rotation frequency
+    # f0 = 0.2254 carries the main peak, and the second to fourth harmonics (folded into
+    # [0, 0.5]) grow as the circle wrinkles from D = 1.70 to D = 1.86.
+    harmonic_power = {}
+    for tag, (freqs, psd) in spectrum.items():
+        assert freqs[0] == 0.0
+        assert freqs[-1] == pytest.approx(0.5)
+        assert psd.max() == pytest.approx(1.0)
+        f0 = freqs[np.argmax(psd)]
+        assert f0 == pytest.approx(0.2254, abs=2e-3)
+        power = 0.0
+        for k in (2, 3, 4):
+            folded = (k * f0) % 1.0
+            folded = min(folded, 1.0 - folded)
+            near = np.abs(freqs - folded) < 2e-3
+            power += psd[near].max()
+        harmonic_power[tag] = power
+    assert harmonic_power["186"] > 1.3 * harmonic_power["170"]
+
+
 def test_delayed_logistic_panel_labels_match_lyapunov_signs():
+    """Each panel's label must agree with lambda_1 evaluated at the panel's own D.
+
+    The sweep grid (2000 points on [1.20, 2.20], step 5.0e-4) does not contain the panel
+    values, and lambda_1 changes by a factor of four within one grid step near D = 1.94
+    (nearest grid point 1.93987: +0.00075; at 1.94 itself: +0.00322), so the sweep cannot
+    stand in for the panel.
+    """
+    from dynachaos.diagnostics.lyapunov import lyapunov_spectrum
+
     with np.load("figures/sec05_oscillation/attractors.npz", allow_pickle=False) as data:
         attractor_D = data["D_values"]
     with np.load("figures/sec05_oscillation/locking_sequence.npz", allow_pickle=False) as data:
         locking_D = data["D_values"]
-    with np.load("figures/sec05_oscillation/lyapunov_vs_D.npz", allow_pickle=False) as data:
-        lyap_D = data["D"]
-        lambda1 = data["spectra"][:, 0]
+    A = 0.3
+
+    def lambda_1(D):
+        fp = (np.sqrt(1.0 + 4.0 * D) - 1.0) / (2.0 * D)
+        spectrum = lyapunov_spectrum(
+            lambda s, _D=D: delayed_logistic(s, A, _D),
+            lambda s, _D=D: delayed_logistic_jac(s, A, _D),
+            np.array([fp + 0.01, fp - 0.01]),
+            n_iter=100_000,
+            n_transient=20_000,
+        )
+        return spectrum[0]
 
     expected = {
         "chaos": "positive",
@@ -522,8 +727,7 @@ def test_delayed_logistic_panel_labels_match_lyapunov_signs():
     ):
         assert len(D_values) == len(labels)
         for D, label in zip(D_values, labels, strict=True):
-            idx = np.argmin(np.abs(lyap_D - D))
-            lam = lambda1[idx]
+            lam = lambda_1(float(D))
             if expected[label] == "positive":
                 assert lam > 1e-3, f"{label=} at D={D} must have positive lambda1, got {lam}"
             elif expected[label] == "negative":
@@ -532,16 +736,35 @@ def test_delayed_logistic_panel_labels_match_lyapunov_signs():
                 assert abs(lam) <= 1e-3, f"{label=} at D={D} must have lambda1 near zero, got {lam}"
 
 
-def test_sali_curves_store_measured_lambda1_regime_context():
-    with np.load("figures/sec11_diagnostics/sali_comparison.npz", allow_pickle=False) as data:
-        DB_values = data["DB_values"]
-        lambda1_values = data["lambda1_values"]
+def test_alignment_three_torus_orbits_match_regime_and_predicted_gali3_rate():
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec11_diagnostics"
+    with np.load(figure_dir / "alignment_three_torus.npz", allow_pickle=False) as data:
+        regimes = [str(r) for r in data["regimes"]]
+        spectrum = data["spectrum"]
+        se = data["spectrum_se"]
+        rate_fit = data["rate_fit"]
+        rate_pred = data["rate_pred"]
+        rate_pred_se = data["rate_pred_se"]
 
-    np.testing.assert_allclose(DB_values, np.array([2.35, 2.37, 2.47, 2.55]))
-    assert abs(lambda1_values[0]) <= 1e-3
-    assert abs(lambda1_values[1]) <= 1e-3
-    assert lambda1_values[2] > 1e-3
-    assert lambda1_values[3] > 5e-2
+    assert regimes == ["torus", "torus", "partial locking", "chaos"]
+    for i, regime in enumerate(regimes):
+        lam, band = spectrum[i], 2.0 * se[i]
+        if regime == "torus":
+            assert abs(lam[0]) <= band[0] and abs(lam[1]) <= band[1], (regime, lam, se[i])
+            assert lam[2] < 0.0, (regime, lam)
+        elif regime == "partial locking":
+            assert abs(lam[0]) <= band[0], (regime, lam, se[i])
+            assert lam[1] < -band[1], (regime, lam, se[i])
+        else:
+            assert lam[0] > band[0], (regime, lam, se[i])
+        # GALI_3 is column 1 (k = 2, 3, 4); the fitted rate is the mean over seeds.
+        fitted = rate_fit[i, :, 1].mean()
+        assert abs(fitted - rate_pred[i, 1]) <= 3.0 * rate_pred_se[i, 1], (
+            regime,
+            fitted,
+            rate_pred[i, 1],
+            rate_pred_se[i, 1],
+        )
 
 
 def test_sec06_canonical_lyapunov_cache_replaces_duplicate_D2_file():
@@ -601,6 +824,48 @@ def test_sec07_correlation_dimension_cache_stays_bounded_and_rises():
     assert np.max(D2) <= 1.45
     assert np.median(high_window) > np.median(low_window) + 0.15
     assert np.corrcoef(D, D2)[0, 1] > 0.5
+
+    # 101 values of D on [1.70, 2.00]; a smooth torus has D_2 = 1.
+    np.testing.assert_allclose(D, np.linspace(1.70, 2.00, 101))
+    assert abs(np.median(low_window) - 1.0) < 0.05
+
+    # A fit below D_2 = 1 is a failed fit: it is flagged, and it is left out of the window
+    # statistics, whose values are recomputed here from the stored sweep.
+    with np.load(
+        "figures/sec07_fractalization/correlation_dimension.npz", allow_pickle=False
+    ) as data:
+        valid_mask = data["valid_mask"]
+        failed_mask = data["failed_mask"]
+        stored = (float(data["mean_window_D2"][0]), float(data["std_window_D2"][0]))
+        window = (float(data["window_min"][0]), float(data["window_max"][0]))
+    np.testing.assert_array_equal(valid_mask, D2 >= 1.0)
+    np.testing.assert_array_equal(failed_mask, ~valid_mask)
+    assert 1 <= failed_mask.sum() <= 10
+    assert np.all(D2[failed_mask] > 0.8)
+    assert window == (1.92, 1.95)
+    _, mean_D2, std_D2 = dimension_window_statistics(D, D2, window)
+    assert stored == pytest.approx((mean_D2, std_D2), rel=1e-12)
+    assert 1.15 < mean_D2 < 1.35
+    assert 0.0 < std_D2 < 0.15
+
+
+def test_dimension_window_statistics_leaves_out_failed_fits():
+    D = np.array([1.90, 1.92, 1.93, 1.94, 1.95, 1.96])
+    D2 = np.array([1.00, 1.20, 0.90, 1.30, 1.25, 1.00])
+
+    valid, mean, std = dimension_window_statistics(D, D2, (1.92, 1.95))
+
+    np.testing.assert_array_equal(valid, [True, True, False, True, True, True])
+    # The window holds 1.20, 1.30 and 1.25 (the failed 0.90 is left out).
+    assert mean == pytest.approx(1.25)
+    assert std == pytest.approx(0.05)
+    # One valid fit gives a mean without scatter; none gives neither.
+    _, mean_one, std_one = dimension_window_statistics(D, D2, (1.94, 1.945))
+    assert mean_one == pytest.approx(1.30)
+    assert np.isnan(std_one)
+    _, mean_none, std_none = dimension_window_statistics(D, D2, (1.93, 1.935))
+    assert np.isnan(mean_none)
+    assert np.isnan(std_none)
 
 
 def test_sec09_spatial_activity_separates_pattern_phase_samples():
@@ -816,10 +1081,10 @@ def test_longest_plateau_window_selects_widest_run():
     assert window == (0.4, 0.6)
 
 
-def test_broad_positive_mask_rejects_short_spikes():
+def test_sustained_positive_mask_rejects_short_spikes():
     values = np.array([-0.1, 0.03, -0.02, 0.04, 0.05, 0.06, 0.07, -0.01])
 
-    mask = broad_positive_mask(values, threshold=0.02, min_run=3)
+    mask = sustained_positive_mask(values, threshold=0.02, min_run=3)
 
     np.testing.assert_array_equal(
         mask,
@@ -827,21 +1092,12 @@ def test_broad_positive_mask_rejects_short_spikes():
     )
 
 
-def test_broad_positive_mask_closes_a_run_that_reaches_the_array_end():
+def test_sustained_positive_mask_closes_a_run_that_reaches_the_array_end():
     values = np.array([-0.1, 0.03, 0.04, 0.05, 0.06])
 
-    mask = broad_positive_mask(values, threshold=0.02, min_run=3)
+    mask = sustained_positive_mask(values, threshold=0.02, min_run=3)
 
     np.testing.assert_array_equal(mask, np.array([False, True, True, True, True]))
-
-
-def test_sustained_positive_mask_matches_legacy_alias():
-    values = np.array([-0.1, 0.03, -0.02, 0.04, 0.05, 0.06, 0.07, -0.01])
-
-    np.testing.assert_array_equal(
-        sustained_positive_mask(values, threshold=0.02, min_run=3),
-        broad_positive_mask(values, threshold=0.02, min_run=3),
-    )
 
 
 def test_compute_clusters_returns_and_writes_explicit_payload(tmp_path):
@@ -866,43 +1122,52 @@ def test_compute_clusters_returns_and_writes_explicit_payload(tmp_path):
         np.testing.assert_allclose(saved["x_record"], payload["x_record"])
 
 
-def test_compute_collective_returns_and_writes_explicit_payload(tmp_path):
-    output_path = tmp_path / "collective_lyapunov.npz"
-    a_values = np.array([1.4, 1.6])
+def test_sec10_msd_cache_shows_saturation_for_every_a():
+    with np.load("figures/sec10_gcm/gcm_msd.npz", allow_pickle=False) as data:
+        a_values = data["a_values"]
+        N = data["N_values"]
+        msd_all = data["msd_all"]
+        msd_mean = data["msd_mean"]
+        msd_stderr = data["msd_stderr"]
+        fits_A = data["fits_A"]
+        fits_B = data["fits_B"]
+        fits_B_stderr = data["fits_B_stderr"]
+        fits_r2 = data["fits_r2"]
+        n_seeds = int(data["n_seeds"][0])
 
-    payload = compute_collective(
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=4,
-        renorm_interval=2,
-        seed=123,
-        output_path=output_path,
-        progress_interval=0,
-    )
+    np.testing.assert_allclose(a_values, [1.80, 1.85, 1.92, 1.95, 1.99])
+    np.testing.assert_array_equal(N, [100, 200, 500, 1000, 2000, 5000, 10_000, 20_000])
+    assert n_seeds == 8
+    assert msd_all.shape == (5, 8, n_seeds)
+    np.testing.assert_allclose(msd_mean, msd_all.mean(axis=2))
+    np.testing.assert_allclose(msd_stderr, msd_all.std(axis=2, ddof=1) / np.sqrt(n_seeds))
 
-    np.testing.assert_allclose(payload["a_values"], a_values)
-    assert payload["lyap_c"].shape == (2,)
-    assert np.all(np.isfinite(payload["lyap_c"]))
-    assert int(payload["N"][0]) == 8
-    with np.load(output_path, allow_pickle=False) as saved:
-        assert set(saved.files) == set(payload)
-        np.testing.assert_allclose(saved["a_values"], payload["a_values"])
-        np.testing.assert_allclose(saved["lyap_c"], payload["lyap_c"])
+    # The stored fit is the least-squares line MSD = A / N + B through the seed means.
+    for ia in range(5):
+        slope, intercept = np.polyfit(1.0 / N, msd_mean[ia], 1)
+        assert fits_A[ia] == pytest.approx(slope, rel=1e-9)
+        assert fits_B[ia] == pytest.approx(intercept, rel=1e-9)
+
+    # The law of large numbers would give MSD ~ 1 / N, a factor 200 from N = 100 to 20000.
+    # Instead the MSD saturates at B > 0 for every a: B exceeds five standard errors,
+    # the MSD at the two largest sizes agrees to 3 %, and it keeps over 25 % of its value
+    # at N = 100.
+    assert np.all(fits_B > 5.0 * fits_B_stderr)
+    assert np.all(fits_B > 5e-4)
+    assert np.all(fits_r2 > 0.95)
+    ratio_largest = msd_mean[:, -1] / msd_mean[:, -2]
+    assert np.all(np.abs(ratio_largest - 1.0) < 0.03)
+    assert np.all(msd_mean[:, -1] > 0.25 * msd_mean[:, 0])
 
 
-def test_sec10_gcm_caches_preserve_collective_signatures():
-    with np.load("figures/sec10_gcm/gcm_results.npz", allow_pickle=False) as data:
-        N_grid = data["N_grid"]
-        msd_grid = data["msd_grid"]
+def test_sec10_gcm_caches_preserve_cluster_and_msd_signatures():
+    with np.load("figures/sec10_gcm/gcm_msd.npz", allow_pickle=False) as data:
+        N_grid = data["N_values"]
+        msd_grid = data["msd_mean"]
 
     with np.load("figures/sec10_gcm/gcm_clusters.npz", allow_pickle=False) as data:
         cluster_labels = data["cluster_labels"]
         n_sites = int(data["N"][0])
-
-    with np.load("figures/sec10_gcm/collective_lyapunov.npz", allow_pickle=False) as data:
-        a_values = data["a_values"]
-        lyap_c = data["lyap_c"]
 
     cluster_counts = np.array([np.unique(row).size for row in cluster_labels])
 
@@ -912,13 +1177,6 @@ def test_sec10_gcm_caches_preserve_collective_signatures():
     assert np.all(msd_grid[:, -1] > msd_grid[:, 0] / 10.0)
     assert cluster_labels.shape == (500, 100)
     assert np.all((2 <= cluster_counts) & (cluster_counts <= n_sites / 10))
-    assert np.all(np.isfinite(lyap_c))
-    assert lyap_c[0] < 0.0
-    assert lyap_c[-1] > 0.0
-    assert np.min(lyap_c) < -0.25
-    assert np.max(lyap_c) > 0.4
-    assert a_values[0] == pytest.approx(1.4)
-    assert a_values[-1] == pytest.approx(2.0)
 
 
 def test_cluster_labels_by_tolerance_groups_sorted_runs():
@@ -1055,14 +1313,14 @@ def test_cml_jacobian_subblock_logistic_matches_manual_matrix():
     np.testing.assert_allclose(J, expected)
 
 
-def test_correlation_length_fit_uses_decay_head_not_noise_floor():
-    r = np.arange(0, 80)
-    corr = np.exp(-r / 2.0)
-    corr[6:] = 2e-3 * (1.0 + 0.1 * np.sin(r[6:]))
+def test_correlation_length_fit_recovers_exponential_decay():
+    r = np.arange(0, 40)
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert 1.0 < xi < 3.0
+    # exp(-r / 3) is exactly 1/e at r = 3, a grid point.
+    assert fit_correlation_length(r, np.exp(-r / 3.0)) == pytest.approx(3.0, abs=1e-12)
+    # Between grid points the linear interpolation of a convex decay overestimates
+    # xi by under 3 %.
+    assert fit_correlation_length(r, np.exp(-r / 2.5)) == pytest.approx(2.5, rel=0.03)
 
 
 def test_correlation_length_fit_ignores_late_tail_spikes():
@@ -1070,60 +1328,84 @@ def test_correlation_length_fit_ignores_late_tail_spikes():
     corr = np.exp(-r / 0.8)
     corr[10] = 0.5
 
-    xi = _fit_correlation_length(r, corr)
+    xi = fit_correlation_length(r, corr)
 
     assert 0.5 < xi < 1.0
 
 
-def test_correlation_length_fit_uses_slow_head_slope_when_target_not_reached():
-    # Decay so slow the target e^-1 is never reached within the near-field
-    # window, so the loop runs to the array end and falls to the fitted-slope
-    # branch instead of the crossing-interpolation branch.
+def test_correlation_length_fit_uses_absolute_value_of_oscillating_correlation():
+    # |C| falls to 1/e between r = 1 and r = 2 even though C itself is negative there.
+    r = np.arange(0, 10)
+    corr = np.array([1.0, 0.6, -0.2, 0.5, -0.4, 0.1, 0.0, 0.0, 0.0, 0.0])
+
+    xi = fit_correlation_length(r, corr)
+
+    expected = 1.0 + (np.exp(-1.0) - 0.6) / (0.2 - 0.6)
+    assert xi == pytest.approx(expected)
+
+
+def test_correlation_length_fit_is_nan_when_target_is_never_reached():
     r = np.arange(0, 30)
-    corr = np.exp(-r / 50.0)
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert 45.0 < xi < 55.0
+    assert np.isnan(fit_correlation_length(r, np.exp(-r / 50.0)))
 
 
 def test_correlation_length_fit_returns_plateau_value_without_interpolation():
     # A flat plateau exactly at the target value: the crossing branch fires
     # with y0 == y1, so no interpolation is needed and x1 is returned as-is.
     r = np.arange(0, 20)
-    target = np.exp(-1.0)
-    corr = np.full(20, target)
+    corr = np.full(20, np.exp(-1.0))
 
-    xi = _fit_correlation_length(r, corr)
-
-    assert xi == pytest.approx(1.0)
+    assert fit_correlation_length(r, corr) == pytest.approx(1.0)
 
 
-def test_correlation_length_fit_uses_envelope_crossing_for_oscillatory_head():
-    # An oscillating head (rises above its previous value repeatedly, so the
-    # scan loop exits early on the "value > previous" condition well before
-    # the target or noise floor) falls through to the envelope-crossing
-    # fallback.
-    r = np.arange(0, 20)
-    corr = np.array([1.0, 0.9, 1.0, 0.9, 1.0, 0.9] + [0.1] * 14)
-
-    xi = _fit_correlation_length(r, corr)
-
-    assert np.isfinite(xi)
-    assert xi > 0.0
-
-
-def test_sec08_correlation_lengths_are_physical_after_refit():
+def test_sec08_correlation_cache_lengths_and_long_range_order():
     with np.load("figures/sec08_sti/correlation_decay.npz", allow_pickle=False) as data:
         a_corr = data["a_corr"]
+        r_vals = data["r_vals"]
+        all_corr = data["all_corr"]
         xi_values = data["xi_values"]
 
-    xi_by_a = dict(zip(a_corr, xi_values, strict=True))
+    np.testing.assert_allclose(a_corr, [1.50, 1.70, 1.85, 1.95])
+    np.testing.assert_allclose(all_corr[:, 0], 1.0)
+    assert r_vals.shape == (101,)
 
-    assert np.all(np.isfinite(xi_values))
-    assert np.all((0.0 < xi_values) & (xi_values < 10.0))
-    assert xi_by_a[1.85] < xi_by_a[1.7]
-    assert xi_by_a[1.95] < xi_by_a[1.7]
+    # The stored xi is the first 1/e crossing of |C(r)|/C(0), recomputed here.
+    expected = [fit_correlation_length(r_vals, c) for c in all_corr]
+    np.testing.assert_allclose(xi_values, expected, rtol=1e-12)
+    assert np.all((0.5 < xi_values) & (xi_values < 3.0))
+    for xi, corr in zip(xi_values, np.abs(all_corr), strict=True):
+        below = int(np.floor(xi))
+        assert np.all(corr[: below + 1] > np.exp(-1.0))
+        assert corr[below + 1] <= np.exp(-1.0)
+
+    # Pattern selection (a = 1.70) keeps oscillating long-range order that the first
+    # fall below 1/e does not capture; the other three states decorrelate.
+    far = np.abs(all_corr[:, 10:]).max(axis=1)
+    assert far[1] > 0.3
+    assert np.all(far[[0, 2, 3]] < 0.05)
+
+
+def test_sec08_ks_entropy_density_is_extensive_in_chaotic_states():
+    with np.load("figures/sec08_sti/correlation_decay.npz", allow_pickle=False) as data:
+        a_lyap = data["a_lyap"]
+        L_vals = data["L_vals"]
+        h_density = data["h_density"]
+
+    np.testing.assert_allclose(a_lyap, [1.50, 1.70, 1.85, 1.95])
+    np.testing.assert_array_equal(L_vals, [10, 20, 30, 40, 60, 80, 100])
+    assert h_density.shape == (4, 7)
+    assert np.all(np.isfinite(h_density))
+    assert np.all(h_density >= 0.0)
+
+    # Defect and fully developed turbulence: h_KS(L)/L is flat in L (extensive).
+    for row in (h_density[2], h_density[3]):
+        plateau = row[1:]
+        assert np.ptp(plateau) / np.mean(plateau) < 0.10
+    # Pattern selection loses its entropy density as the subsystem grows.
+    assert h_density[1, -1] < 0.5 * h_density[1, 0]
+    # More chaotic states carry more entropy per site at the largest subsystem.
+    assert h_density[3, -1] > h_density[2, -1] > h_density[0, -1] > h_density[1, -1]
 
 
 def test_gcm_step_matches_manual_formula():
@@ -1492,48 +1774,6 @@ def test_compute_clusters_seed_controls_rng_determinism():
     )
 
 
-def test_compute_collective_seed_controls_rng_determinism():
-    a_values = np.array([1.4, 1.6, 1.8])
-
-    first = compute_collective(
-        seed=7,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-    second = compute_collective(
-        seed=7,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    np.testing.assert_array_equal(first["lyap_c"], second["lyap_c"])
-
-    different_seed = compute_collective(
-        seed=99,
-        n_sites=8,
-        a_values=a_values,
-        n_transient=2,
-        n_measure=6,
-        renorm_interval=2,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    assert not np.array_equal(first["lyap_c"], different_seed["lyap_c"]), (
-        "compute_collective should produce different lyap_c values for different seeds"
-    )
-
-
 # ---------------------------------------------------------------------------
 # Golden-value regression tests for compute-aggregate functions
 # ---------------------------------------------------------------------------
@@ -1657,34 +1897,6 @@ def test_compute_clusters_golden_values(tmp_path):
     with np.load(output_path) as saved:
         np.testing.assert_array_equal(saved["cluster_labels"], payload["cluster_labels"])
         np.testing.assert_allclose(saved["x_record"], payload["x_record"], rtol=1e-9)
-
-
-# params: n_sites=4, a_values=[1.4, 1.6], n_transient=5, n_measure=10, seed=7
-def test_compute_collective_golden_values(tmp_path):
-    """Pin CURRENT aggregate output; catches silent numeric drift."""
-    output_path = tmp_path / "collective_golden.npz"
-    payload = compute_collective(
-        n_sites=4,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=5,
-        n_measure=10,
-        renorm_interval=5,
-        seed=7,
-        output_path=output_path,
-        progress_interval=0,
-    )
-
-    np.testing.assert_allclose(payload["a_values"], np.array([1.4, 1.6]), rtol=1e-9)
-    np.testing.assert_allclose(
-        payload["lyap_c"],
-        np.array([-0.11970016300271111, 0.17056225610801404]),
-        rtol=1e-9,
-    )
-    assert payload["lyap_c"].shape == (2,)
-    assert np.all(np.isfinite(payload["lyap_c"]))
-
-    with np.load(output_path) as saved:
-        np.testing.assert_allclose(saved["lyap_c"], payload["lyap_c"], rtol=1e-9)
 
 
 # params: n_grid=4, n_transient=2, reference_transient=2, period=2, seed=N/A
@@ -2046,7 +2258,7 @@ def test_circle_map_plot_tiny_devils_staircase(tmp_path):
     old_png = cm_module.OUTPUT_PNG
     cm_module.OUTPUT_PNG = output_png
     try:
-        cm_module.plot(data)
+        cm_module.plot(data, k_inf=0.1567168)
     finally:
         cm_module.OUTPUT_PNG = old_png
 

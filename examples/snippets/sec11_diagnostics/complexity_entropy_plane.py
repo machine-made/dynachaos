@@ -1,4 +1,5 @@
-# Figure: complexity-entropy plane (H, C) locating logistic-map regimes.
+# Reduced preview (4 a values). Full figure: dynachaos run sec11_diagnostics
+# Complexity-entropy plane (H, C) locating logistic-map regimes (d=5).
 import numpy as np
 
 from dynachaos.diagnostics.permutation import complexity_entropy

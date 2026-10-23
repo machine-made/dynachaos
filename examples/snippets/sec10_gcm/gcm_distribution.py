@@ -1,7 +1,5 @@
-# Figure: distribution P(h) of the mean field h_n of a globally coupled
-# logistic map; the mean-field histogram stays broad rather than narrowing
-# to a delta function as N grows, the hallmark of GCM violating the law
-# of large numbers.
+# Reduced preview (N in (50, 5000), a=1.99). Full figure: dynachaos run sec10_gcm
+# Distribution P(h) of the mean field h_n of a globally coupled logistic map.
 import numpy as np
 
 from dynachaos.cml.primitives import gcm_step

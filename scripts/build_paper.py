@@ -30,6 +30,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -255,6 +256,26 @@ ACCENTS = {
 ACCENT_RE = re.compile(r"\\(['`^\"~=.])\{?([a-zA-Z])\}?")
 
 
+def abstract_to_html(raw: str) -> str:
+    """Convert the LaTeX abstract to an inline HTML fragment, math as MathML.
+
+    The regex ``clean`` pass below drops every control sequence, which loses
+    ``\\times`` inside ``$2 \\times 10^5$``; pandoc keeps it, as in the body.
+    """
+    if not raw.strip():
+        return ""
+    proc = subprocess.run(
+        ["pandoc", "-f", "latex", "-t", "html5", "--mathml", "--wrap=none"],
+        input=raw, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    out = re.sub(r"^<p>|</p>\s*$", "", proc.stdout.strip())
+    # same MathML normalisation as the body in transform(): no TeX annotation
+    out = ANNOTATION_RE.sub("", out)
+    out = out.replace(' xmlns="http://www.w3.org/1998/Math/MathML"', "")
+    out = out.replace('<math display="inline">', "<math>")
+    return re.sub(r"</?semantics>\s*", "", out)
+
+
 def extract_meta(tex: str) -> dict[str, str]:
     """Pull title, byline, affiliation and a lede from the manuscript preamble.
 
@@ -267,7 +288,12 @@ def extract_meta(tex: str) -> dict[str, str]:
     def clean(raw: str) -> str:
         raw = ACCENT_RE.sub(lambda m: ACCENTS.get((m.group(1), m.group(2)), m.group(2)), raw)
         raw = re.sub(r"\\[a-zA-Z]+\{([^{}]*)\}", r"\1", raw)
-        raw = raw.replace(r"\&", "&").replace("~", " ").replace("--", "\u2013")
+        raw = (
+            raw.replace(r"\&", "&")
+            .replace("~", " ")
+            .replace("---", "\u2014")
+            .replace("--", "\u2013")
+        )
         raw = re.sub(r"\\[a-zA-Z]+", "", raw)
         raw = raw.replace("{", "").replace("}", "")
         return " ".join(raw.split()).strip()
@@ -276,6 +302,7 @@ def extract_meta(tex: str) -> dict[str, str]:
         m = re.search(pattern, tex, re.S)
         return clean(m.group(1)) if m else ""
 
+    abstract_raw = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", tex, re.S)
     abstract = find(r"\\begin\{abstract\}(.*?)\\end\{abstract\}")
     sentences = [x for x in re.split(r"(?<=\.)\s+", abstract) if x]
 
@@ -294,10 +321,21 @@ def extract_meta(tex: str) -> dict[str, str]:
 
     return {
         "title": find(r"\\title\{(.+?)\}\s*\n"),
-        "authors": find(r"\\author\{(.+?)\}"),
+        "authors": find(r"\\author\{(.+?)\}") or "Ricardo Frantz",
         "affil": find(r"\\affil[^{]*\{(.+?)\}"),
         "lede": find(r"\\newcommand\{\\sitelede\}\{(.+?)\}\s*\n") or lede or abstract[:320],
+        "abstract": abstract_to_html(abstract_raw.group(1) if abstract_raw else ""),
+        "date": "2026-10-17",
+        "version": tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["version"],
     }
+
+
+def fix_author_citations(tex: str) -> tuple[str, int]:
+    """Convert 'Author~\\cite{key}' to '\\citet{key}' for pandoc author-date HTML."""
+    pattern = re.compile(
+        r"\b([A-Z][a-zA-Z\u00C0-\u017F]+(?:\s+(?:and|&)\s+[A-Z][a-zA-Z\u00C0-\u017F]+|,\s+[A-Z][a-zA-Z\u00C0-\u017F]+,?\s+(?:and|&)\s+[A-Z][a-zA-Z\u00C0-\u017F]+)?)[ ~]\\cite\{([^}]+)\}"
+    )
+    return pattern.subn(r"\\citet{\2}", tex)
 
 
 def run_pandoc(source: Path) -> tuple[str, list[str]]:
@@ -313,6 +351,9 @@ def run_pandoc(source: Path) -> tuple[str, list[str]]:
     raw_tex, eq_tags = extract_tags(raw_tex)
     if eq_tags:
         print(f"  preserved {len(eq_tags)} tagged equations: {' '.join(eq_tags)}")
+    raw_tex, n_cites = fix_author_citations(raw_tex)
+    if n_cites:
+        print(f"  normalized {n_cites} author citations to citet")
     if n_tabx:
         print(f"  rewrote {n_tabx} tabularx environments as tabular")
     patched, n_anchor = anchor_labels(raw_tex)
@@ -1225,9 +1266,10 @@ def hero(meta: dict[str, str], body: str) -> str:
 <div class="hero-inner">
 <p class="eyebrow">Recomputed with dynachaos</p>
 <h1>{html.escape(meta["title"])}</h1>
-<p class="byline">{html.escape(meta["authors"])}<span class="affil">{html.escape(meta["affil"])}</span></p>
+<p class="byline">{html.escape(meta.get("authors") or "Ricardo Frantz")}<span class="affil">{html.escape(meta.get("affil", ""))}</span></p>
+<p class="pub-meta"><time datetime="{meta.get("date", "2026-10-17")}">{meta.get("date", "2026-10-17")}</time> &middot; dynachaos {meta.get("version", "0.4.1")} &middot; <span class="pub-status">Preprint, not peer reviewed</span></p>
+<p class="hero-links"><a href="gallery.html">all figures as a gallery</a> &middot; <a href="#how-to-cite">how to cite</a></p>
 <p class="lede">{html.escape(meta["lede"])}</p>
-<p class="hero-links"><a href="gallery.html">all figures as a gallery</a></p>
 <ul class="stats">{stats}</ul>
 </div>
 <div class="legend">
@@ -1341,6 +1383,54 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
         if js_hash
         else '<script src="app.js" defer></script>'
     )
+    author = "Ricardo Frantz"
+    pub_date = meta.get("date", "2026-10-17")
+    pub_date_slash = pub_date.replace("-", "/")
+    version = meta.get("version", "0.4.1")
+    site_url = "https://openfluids.github.io/dynachaos/"
+
+    scholarly_json = json.dumps(
+        {
+            "@context": "https://schema.org",
+            "@type": "ScholarlyArticle",
+            "headline": meta["title"],
+            "name": meta["title"],
+            "description": meta.get("lede", ""),
+            "author": [
+                {
+                    "@type": "Person",
+                    "name": author,
+                    "affiliation": {
+                        "@type": "Organization",
+                        "name": meta.get("affil", "EPFL"),
+                    },
+                }
+            ],
+            "datePublished": pub_date,
+            "url": site_url,
+        },
+        indent=2,
+    )
+
+    abstract_text = meta.get("abstract", "")
+    abstract_box = (
+        f'<div class="abstract-box" id="abstract"><h2>Abstract</h2><p>{abstract_text}</p></div>'
+        if abstract_text
+        else ""
+    )
+
+    how_to_cite_box = f"""<div class="how-to-cite-box" id="how-to-cite">
+<h2>How to cite</h2>
+<p>To cite this atlas or the recomputed results:</p>
+<pre><code>@misc{{frantz2026dynachaos,
+  title        = {{{meta["title"]}}},
+  author       = {{Frantz, Ricardo}},
+  year         = {{2026}},
+  howpublished = {{\\url{{{site_url}}}}},
+  note         = {{dynachaos version {version}, {pub_date}. Preprint, not peer reviewed}}
+}}</code></pre>
+</div>"""
+
     raw_html = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1348,6 +1438,17 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(meta["title"])}</title>
 <meta name="description" content="{html.escape(meta["lede"][:180])}">
+<meta name="citation_title" content="{html.escape(meta["title"])}">
+<meta name="citation_author" content="{author}">
+<meta name="citation_publication_date" content="{pub_date_slash}">
+<meta name="citation_online_date" content="{pub_date_slash}">
+<meta property="og:title" content="{html.escape(meta["title"])}">
+<meta property="og:description" content="{html.escape(meta["lede"][:300])}">
+<meta property="og:url" content="{site_url}">
+<meta property="og:type" content="article">
+<script type="application/ld+json">
+{scholarly_json}
+</script>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌀</text></svg>">
 <link rel="preload" href="fonts/pagella-bold.woff2" as="font" type="font/woff2" crossorigin fetchpriority="high">
 <link rel="preload" href="fonts/pagella-regular.woff2" as="font" type="font/woff2" crossorigin>
@@ -1363,6 +1464,8 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
 {nav}
 <main id="main-content">
 <article>
+{abstract_box}
+{how_to_cite_box}
 {body}
 </article>
 </main>

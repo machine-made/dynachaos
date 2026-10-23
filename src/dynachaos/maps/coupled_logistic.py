@@ -12,7 +12,8 @@ Map (Eq. 1.1):
 Figures:
   - Parameter survey in (A, D) using symmetry-breaking and Lyapunov observables
   - Representative attractor portraits at D=0.1 along the broken-symmetry route
-  - Basin of attraction showing stripe accumulation near the invariant diagonal
+  - Basin of attraction (full view and two zooms) showing stripe accumulation near the
+    invariant diagonal
 
 OUTPUTS: figures/sec03_transition/phase_diagram.npz, phase_diagram.png
          figures/sec03_transition/attractors.npz, attractors.png
@@ -64,6 +65,21 @@ ANIM_NPZ = FIG_DIR / "attractors_animation.npz"
 ANIM_GIF = FIG_DIR / "attractors_animation.gif"
 PHASE_SCHEMA_VERSION = 3
 PHASE_REQUIRED_KEYS = ("A", "D", "asym", "lyap", "schema_version")
+BASIN_REQUIRED_KEYS = (
+    "x",
+    "y",
+    "basin",
+    "A",
+    "D",
+    "x_zoom1",
+    "y_zoom1",
+    "basin_zoom1",
+    "rect_zoom1",
+    "x_zoom2",
+    "y_zoom2",
+    "basin_zoom2",
+    "rect_zoom2",
+)
 
 
 @dataclass(frozen=True)
@@ -376,25 +392,39 @@ def _basin_grid(A, D, x_range, y_range, n_transient, ref_A):
     return _basin_grid_python(A, D, x_range, y_range, n_transient, ref_A)
 
 
+# Zoom windows (x0, x1, y0, y1) near the invariant diagonal y = x.
+BASIN_ZOOMS = ((-0.16, 0.04, -0.11, 0.09), (-0.07, -0.03, -0.07, -0.03))
+
+
 def compute_basins(
     *,
     A=1.35344,
     D=0.1,
     n_grid=800,
-    n_transient=50_000,
-    reference_transient=500_000,
+    n_transient=10_000,
+    reference_transient=50_000,
     period=32,
+    zoom_windows=(),
+    n_grid_zoom=500,
     output_path=BASIN_NPZ,
 ):
-    """Compute basin of attraction showing stripe structure.
+    """Compute the basin of attraction showing the stripe structure.
 
     At A=1.35344, D=0.1, two coexisting asymmetric period-32 cycles
     exist (Kaneko 1983, Fig. 8).  They are mirror images about y=x.
     The basin boundary between them forms self-similar stripes near
     the y=x line.
 
-    Classification: after a long transient, the final state is compared
-    to both reference orbits; the closer one determines the basin.
+    Classification: after a transient, the orbit is compared with both
+    reference cycles over the full period (the minimum squared distance to
+    the 32 points of each cycle), not by the sign of x - y at one step.  Points
+    equidistant from both cycles (the invariant diagonal) get label 0 and
+    diverged points label -1.
+
+    ``zoom_windows`` is a sequence of ``(x0, x1, y0, y1)`` boxes.  Each box is
+    classified on its own ``n_grid_zoom`` x ``n_grid_zoom`` grid and stored as
+    ``x_zoom<i>``, ``y_zoom<i>``, ``basin_zoom<i>`` and ``rect_zoom<i>``
+    (i = 1, 2, ...), so the stripe nesting is resolved rather than magnified.
 
     Vectorized: each row of the grid processes all x values in parallel.
     """
@@ -404,13 +434,28 @@ def compute_basins(
 
     x_range = np.linspace(-1.0, 1.0, n_grid)
     y_range = np.linspace(-1.0, 1.0, n_grid)
-    basin = _basin_grid(A, D, x_range, y_range, n_transient, ref_A)
+    print("  Computing full basin grid...")
+    payload = {
+        "x": x_range,
+        "y": y_range,
+        "basin": _basin_grid(A, D, x_range, y_range, n_transient, ref_A),
+    }
+    for i, (zx0, zx1, zy0, zy1) in enumerate(zoom_windows, start=1):
+        print(f"  Computing zoom {i} basin grid...")
+        x_zoom = np.linspace(zx0, zx1, n_grid_zoom)
+        y_zoom = np.linspace(zy0, zy1, n_grid_zoom)
+        payload[f"x_zoom{i}"] = x_zoom
+        payload[f"y_zoom{i}"] = y_zoom
+        payload[f"basin_zoom{i}"] = _basin_grid(A, D, x_zoom, y_zoom, n_transient, ref_A)
+        payload[f"rect_zoom{i}"] = np.array([zx0, zx1, zy0, zy1])
+    payload["A"] = np.array([A])
+    payload["D"] = np.array([D])
+    return _io_write_payload(output_path, payload, base_dir=FIG_DIR)
 
-    return _io_write_payload(
-        output_path,
-        {"x": x_range, "y": y_range, "basin": basin, "A": np.array([A]), "D": np.array([D])},
-        base_dir=FIG_DIR,
-    )
+
+def compute_basin_figure_data():
+    """Compute the basin data of the figure: full view plus the two zoom boxes."""
+    return compute_basins(zoom_windows=BASIN_ZOOMS)
 
 
 # ---------------------------------------------------------------------------
@@ -597,10 +642,13 @@ def plot_attractors(data):
 
 
 def plot_basins(data):
-    """Plot basin of attraction with a zoom panel near y=x."""
+    """Plot the full basin (a) and its zooms (b, c) near the invariant diagonal.
+
+    A payload without zoom windows (the ``compute_basins`` default) gives panel (a) only.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.colors import BoundaryNorm, ListedColormap
-    from matplotlib.patches import Patch
+    from matplotlib.patches import Patch, Rectangle
 
     from dynachaos.utils.style import (
         COLORS,
@@ -612,94 +660,71 @@ def plot_basins(data):
 
     setup()
 
-    x = data["x"]
-    y = data["y"]
-    basin = data["basin"]
-    A_val = data["A"][0]
+    A_val = float(data["A"][0])
 
     cmap = ListedColormap(
         [
-            COLORS["offwhite"],
-            COLORS["grey"],
-            COLORS["blue"],
-            COLORS["red"],
+            COLORS["offwhite"],  # -1 diverged
+            COLORS["grey"],  # 0 diagonal / symmetric
+            COLORS["blue"],  # 1 basin A
+            COLORS["red"],  # 2 basin B
         ]
     )
     norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5, 2.5], cmap.N)
 
+    zooms = [s for s in ("_zoom1", "_zoom2") if f"basin{s}" in data]
+    n_panels = 1 + len(zooms)
     spec = figure_spec("double")
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(spec.figsize[0], spec.figsize[1] + 0.15))
-    fig.subplots_adjust(wspace=0.18, bottom=0.2)
-    extent = (x[0], x[-1], y[0], y[-1])
+    width = spec.figsize[0] * 1.35
+    if n_panels < 3:
+        width *= n_panels / 3
+    fig, axes = plt.subplots(1, n_panels, figsize=(width, 3.2), squeeze=False)
+    axes = axes[0]
+    fig.subplots_adjust(wspace=0.7, bottom=0.22)
 
-    ax1.imshow(
-        basin,
-        origin="lower",
-        extent=extent,
-        cmap=cmap,
-        norm=norm,
-        interpolation="nearest",
-        rasterized=True,
-    )
-    ax1.plot(x, x, color=COLORS["black"], linestyle="--", lw=0.45, alpha=0.45)
-    ax1.set_xlabel("$x_0$")
-    ax1.set_ylabel("$y_0$")
-    ax1.set_title(f"Full basin at $a = {A_val:.5f}$", loc="left")
     # Opaque backing: the default semi-transparent tag picks up a two-tone
     # tint from the red/blue basin field directly underneath it.
-    panel_label(
-        ax1,
-        "(a)",
-        bbox={"facecolor": COLORS["offwhite"], "alpha": 1.0, "pad": 1.2, "edgecolor": "none"},
-    )
-    apply_axes_polish(ax1, kind="double", title_loc="left", grid=False, equal=True)
+    tag_box = {"facecolor": COLORS["offwhite"], "alpha": 1.0, "pad": 1.2, "edgecolor": "none"}
+    suffixes = ("", *zooms)
+    panels = (
+        ("", "(a)", f"Full basin at $a = {A_val:.5f}$"),
+        ("_zoom1", "(b)", "Zoom 1 near diagonal"),
+        ("_zoom2", "(c)", "Zoom 2 (high magnification)"),
+    )[:n_panels]
+    for ax, (suffix, tag, title) in zip(axes, panels, strict=True):
+        x = data[f"x{suffix}"]
+        y = data[f"y{suffix}"]
+        ax.imshow(
+            data[f"basin{suffix}"],
+            origin="lower",
+            extent=(x[0], x[-1], y[0], y[-1]),
+            cmap=cmap,
+            norm=norm,
+            interpolation="nearest",
+            rasterized=True,
+        )
+        ax.plot(x, x, color=COLORS["black"], linestyle="--", lw=0.45, alpha=0.5)
+        ax.set_xlim(x[0], x[-1])
+        ax.set_ylim(y[0], y[-1])
+        ax.set_xlabel("$x_0$")
+        ax.set_ylabel("$y_0$")
+        ax.set_title(title, loc="left")
+        panel_label(ax, tag, bbox=tag_box)
+        apply_axes_polish(ax, kind="double", title_loc="left", grid=False, equal=True)
 
-    zx0, zx1, zy0, zy1 = -0.16, 0.04, -0.11, 0.09
-    rect = plt.Rectangle(
-        (zx0, zy0),
-        zx1 - zx0,
-        zy1 - zy0,
-        lw=0.8,
-        ec=COLORS["black"],
-        fc="none",
-    )
-    ax1.add_patch(rect)
-
-    ax2.imshow(
-        basin,
-        origin="lower",
-        extent=extent,
-        cmap=cmap,
-        norm=norm,
-        interpolation="nearest",
-        rasterized=True,
-    )
-    ax2.plot(
-        [-0.2, 0.1],
-        [-0.2, 0.1],
-        color=COLORS["black"],
-        linestyle="--",
-        lw=0.45,
-        alpha=0.45,
-    )
-    ax2.set_xlim(zx0, zx1)
-    ax2.set_ylim(zy0, zy1)
-    ax2.set_xlabel("$x_0$")
-    ax2.set_ylabel("$y_0$")
-    ax2.set_title("Zoom near the invariant diagonal", loc="left")
-    panel_label(
-        ax2,
-        "(b)",
-        bbox={"facecolor": COLORS["offwhite"], "alpha": 1.0, "pad": 1.2, "edgecolor": "none"},
-    )
-    apply_axes_polish(ax2, kind="double", title_loc="left", grid=False, equal=True)
+    # Boxes that mark each zoom window on the panel it magnifies.
+    for ax, suffix, lw in zip(axes, zooms, (0.8, 1.0), strict=False):
+        zx0, zx1, zy0, zy1 = data[f"rect{suffix}"]
+        ax.add_patch(
+            Rectangle((zx0, zy0), zx1 - zx0, zy1 - zy0, lw=lw, ec=COLORS["black"], fc="none")
+        )
 
     legend_elements = [
-        Patch(facecolor=COLORS["grey"], label="Synchronized 4-cycle"),
-        Patch(facecolor=COLORS["blue"], label="Asymmetric orbit A"),
-        Patch(facecolor=COLORS["red"], label="Asymmetric orbit B"),
+        Patch(facecolor=COLORS["blue"], lw=0, label="Cycle 1"),
+        Patch(facecolor=COLORS["red"], lw=0, label="Cycle 2"),
+        Patch(facecolor=COLORS["grey"], lw=0, label="Diagonal"),
     ]
-    if np.any(basin == -1):
+    if any(np.any(data[f"basin{suffix}"] == -1) for suffix in suffixes):
         legend_elements.insert(
             0,
             Patch(facecolor=COLORS["offwhite"], edgecolor=COLORS["grey"], label="Diverged"),
@@ -821,8 +846,8 @@ def main():
     basin_data = load_or_compute_npz(
         BASIN_NPZ,
         "basins",
-        compute_basins,
-        required_keys=("x", "y", "basin", "A", "D"),
+        compute_basin_figure_data,
+        required_keys=BASIN_REQUIRED_KEYS,
     )
     plot_basins(basin_data)
 

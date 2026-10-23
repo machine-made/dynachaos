@@ -7,7 +7,7 @@ combination) and are not reachable within the test time budget -- see the
 per-module notes below. Where a module exposes a computation that runs in a
 fraction of a second at its own hardcoded scale (spatiotemporal.compute,
 pattern_dynamics.compute_space_amplitude, correlation_figure.compute_correlations,
-gcm_clusters.compute_clusters/compute_collective), it is exercised directly.
+gcm_clusters.compute_clusters), it is exercised directly.
 Plot functions are exercised with tiny synthetic payloads shaped like the
 real .npz schema, matching the monkeypatch-the-module-constant pattern used
 throughout test_maps.py (see test_arnold_tongues_main_calls_plot).
@@ -301,11 +301,11 @@ def test_pattern_dynamics_main_recomputes_stale_space_cache(monkeypatch, tmp_pat
 # ---------------------------------------------------------------------------
 # correlation_figure
 #
-# compute_lyapunov_density() sweeps 4 a values x 8 subsystem sizes, each with
-# a 5000 step transient plus a 20000 step Jacobian-propagated measurement
-# (src/dynachaos/cml/correlation_figure.py:92-145). Measured at ~9.4s for the
-# real parameters, over the per-test 5s budget, so it is left uncovered; the
-# lighter compute_correlations() (~0.7s) is exercised directly instead.
+# compute_ks_entropy_density() sweeps 4 a values x 7 subsystem sizes with a QR
+# propagation of up to 100 exponents over 2000 steps each
+# (src/dynachaos/cml/correlation_figure.py), far over the per-test 5s budget,
+# so it is exercised on a tiny lattice below; the lighter
+# compute_correlations() (~0.7s) is exercised directly with its real parameters.
 # ---------------------------------------------------------------------------
 
 
@@ -318,25 +318,38 @@ def test_correlation_figure_compute_correlations_normalizes_to_one_at_zero_lag()
     assert np.all(np.isfinite(all_corr))
 
 
+def test_correlation_figure_ks_entropy_density_vanishes_without_chaos_and_is_positive_with_it():
+    a_values, L_values, density = correlation_figure.compute_ks_entropy_density(
+        N=24, a_values=(0.5, 1.95), L_values=(4, 8), n_transient=300, n_iter=400
+    )
+
+    np.testing.assert_allclose(a_values, [0.5, 1.95])
+    np.testing.assert_array_equal(L_values, [4, 8])
+    assert density.shape == (2, 2)
+    # a = 0.5 is a contracting fixed point: every exponent is negative, so h_KS = 0.
+    np.testing.assert_array_equal(density[0], 0.0)
+    assert np.all(density[1] > 0.02)
+
+
 def test_correlation_figure_compute_combines_correlations_and_fits_xi(monkeypatch, tmp_path):
     npz_path = tmp_path / "correlation_decay.npz"
     monkeypatch.setattr(correlation_figure, "FIG_DIR", tmp_path)
     monkeypatch.setattr(correlation_figure, "CORR_NPZ", npz_path)
 
-    def fake_lyapunov_density():
+    def fake_ks_entropy_density():
         a_values = np.array([1.5, 1.7, 1.85, 1.95])
         L_values = np.array([10, 20])
-        density = np.full((4, 2), 0.01)
-        return a_values, L_values, density
+        h_density = np.full((4, 2), 0.01)
+        return a_values, L_values, h_density
 
-    monkeypatch.setattr(correlation_figure, "compute_lyapunov_density", fake_lyapunov_density)
+    monkeypatch.setattr(correlation_figure, "compute_ks_entropy_density", fake_ks_entropy_density)
 
     correlation_figure.compute()
 
     with np.load(npz_path) as data:
         assert data["all_corr"].shape[0] == 4
         assert data["xi_values"].shape == (4,)
-        assert data["density"].shape == (4, 2)
+        assert data["h_density"].shape == (4, 2)
 
 
 def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
@@ -349,7 +362,7 @@ def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
     xi_values = np.array([2.0, 4.0, 8.0, np.nan])
     a_lyap = a_corr
     L_vals = np.array([10, 20, 40])
-    density = np.tile(np.linspace(0.1, 0.05, 3), (4, 1))
+    h_density = np.tile(np.linspace(0.1, 0.05, 3), (4, 1))
 
     data = {
         "a_corr": a_corr,
@@ -358,7 +371,7 @@ def test_correlation_figure_plot_writes_png(monkeypatch, tmp_path):
         "xi_values": xi_values,
         "a_lyap": a_lyap,
         "L_vals": L_vals,
-        "density": density,
+        "h_density": h_density,
     }
 
     correlation_figure.plot(data)
@@ -385,7 +398,7 @@ def test_correlation_figure_main_computes_when_cache_missing(monkeypatch, tmp_pa
             xi_values=np.array([2.0, 3.0]),
             a_lyap=a_vals,
             L_vals=np.array([10, 20]),
-            density=np.full((2, 2), 0.01),
+            h_density=np.full((2, 2), 0.01),
         )
 
     monkeypatch.setattr(correlation_figure, "compute", fake_compute)
@@ -394,6 +407,37 @@ def test_correlation_figure_main_computes_when_cache_missing(monkeypatch, tmp_pa
 
     assert npz_path.exists()
     assert png_path.stat().st_size > 0
+
+
+def test_correlation_figure_main_recomputes_stale_cache(monkeypatch, tmp_path):
+    npz_path = tmp_path / "correlation_decay.npz"
+    monkeypatch.setattr(correlation_figure, "FIG_DIR", tmp_path)
+    monkeypatch.setattr(correlation_figure, "CORR_NPZ", npz_path)
+    monkeypatch.setattr(correlation_figure, "CORR_PNG", tmp_path / "correlation_decay.png")
+    # Old schema: the density array was stored as "density", not "h_density".
+    np.savez_compressed(npz_path, density=np.zeros((2, 2)))
+    calls = []
+
+    def fake_compute():
+        calls.append(1)
+        r_vals = np.arange(0, 10)
+        a_vals = np.array([1.5, 1.7])
+        np.savez_compressed(
+            npz_path,
+            a_corr=a_vals,
+            r_vals=r_vals,
+            all_corr=np.exp(-r_vals[None, :] / np.array([[2.0], [3.0]])),
+            xi_values=np.array([2.0, 3.0]),
+            a_lyap=a_vals,
+            L_vals=np.array([10, 20]),
+            h_density=np.full((2, 2), 0.01),
+        )
+
+    monkeypatch.setattr(correlation_figure, "compute", fake_compute)
+
+    correlation_figure.main()
+
+    assert calls == [1]
 
 
 def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_path):
@@ -414,7 +458,7 @@ def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_
         xi_values=np.array([2.0, 3.0]),
         a_lyap=a_vals,
         L_vals=np.array([10, 20]),
-        density=np.full((2, 2), 0.01),
+        h_density=np.full((2, 2), 0.01),
     )
 
     # The cache already exists, so main() takes the "Loaded" branch
@@ -427,9 +471,8 @@ def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_
 # ---------------------------------------------------------------------------
 # comoving_figure
 #
-# compute() propagates a two-copy Benettin scheme on an N=500 lattice across
-# 301 co-moving velocities, each with a 20000 step transient plus a 100000
-# step measurement (src/dynachaos/cml/comoving_figure.py:37-76) -- not
+# compute() runs the windowed estimator on an N = 3000 lattice for 51 velocities
+# and T = 1000 steps per a value (src/dynachaos/cml/comoving_figure.py) -- not
 # reachable at test scale. plot() and main()'s cache-miss branch are
 # exercised with a fast synthetic replacement for compute().
 # ---------------------------------------------------------------------------
@@ -442,25 +485,23 @@ def test_comoving_figure_plot_writes_png_and_marks_crossings(monkeypatch, tmp_pa
     monkeypatch.setattr(comoving_figure, "FIG_DIR", tmp_path)
     monkeypatch.setattr(comoving_figure, "OUTPUT_PNG", png_path)
 
-    v_values = np.linspace(-1.5, 1.5, 61)
-    a_values = np.array([1.70, 1.85])
-    lam_170 = -v_values * 0.2
-    # Below the -9.5 validity floor at the first two points, so the adjacent
-    # pair (invalid, valid) hits the "continue" skip when scanning for zero
-    # crossings (comoving_figure.py:132-134).
-    lam_170[:2] = -20.0
+    v_values = np.linspace(0.0, 1.0, 51)
+    a_values = np.array([1.70, 1.85, 1.95])
     data = {
         "v_values": v_values,
         "a_values": a_values,
-        # This curve vanishes exactly on the grid point v = 0, so the product
-        # of two neighbours is zero and the scan records no crossing.
-        "lambda_a1.70": lam_170,
-        # This one has its root at v = 0.05 / 0.3 = 1/6, between the grid
-        # points 0.15 and 0.20, so the scan does record a crossing.
-        "lambda_a1.85": -v_values * 0.3 + 0.05,
+        "eps": np.array([0.3]),
+        "N": np.array([3000]),
+        # Root at v = 0.1 / 0.4 = 0.25, between the grid points 0.24 and 0.26: a
+        # propagation speed (v > 0.2), so it is drawn and labelled.
+        "lambda_a1.70": -v_values * 0.4 + 0.1,
+        # Root at v = 0.5 / 1.25 = 0.4 on the grid: sign change with an exact zero.
+        "lambda_a1.85": -v_values * 1.25 + 0.5,
+        # Root at v = 0.1 < 0.2: a crossing near the origin is not a propagation speed.
+        "lambda_a1.95": -v_values * 1.0 + 0.1,
     }
 
-    # The crossing label is the only visible evidence that the scan ran, and
+    # The crossing labels are the only visible evidence that the scan ran, and
     # plot() closes the figure before returning. Record the text as it is drawn.
     labels: list[str] = []
     draw_text = Axes.text
@@ -474,10 +515,126 @@ def test_comoving_figure_plot_writes_png_and_marks_crossings(monkeypatch, tmp_pa
     comoving_figure.plot(data)
 
     assert png_path.stat().st_size > 0
-    # lambda is linear in v here, so the linear interpolation between the two
-    # neighbouring grid points must return the exact root 1/6 = 0.1667.
-    assert any(r"v_p(a=1.85) \approx 0.17" in label for label in labels)
-    assert not any("a=1.70" in label for label in labels)
+    # lambda is linear in v, so the linear interpolation between the two
+    # neighbouring grid points must return the exact roots.
+    assert any(r"v_p \approx 0.250" in label for label in labels)
+    assert any(r"v_p \approx 0.400" in label for label in labels)
+    assert not any(r"v_p \approx 0.100" in label for label in labels)
+    assert len(labels) == 2
+
+
+def test_comoving_windowed_matches_single_site_decay_without_coupling():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # eps = 0: sites do not interact.  For a = 0.5 every site converges to the fixed point
+    # x* = (-1 + sqrt(1 + 4 a)) / (2 a), where f'(x*) = -2 a x*.  A window that stays on
+    # the same sites (v = 0) then shrinks by exactly |f'(x*)| per step.
+    a = 0.5
+    x_star = (-1.0 + np.sqrt(1.0 + 4.0 * a)) / (2.0 * a)
+    lam = comoving_lyapunov_windowed_logistic(
+        a=a, eps=0.0, N=200, T=50, v_values=[0.0, 0.5, 1.0], n_transient=2000, w=5, i0=60
+    )
+
+    assert lam[0] == pytest.approx(np.log(2.0 * a * x_star), abs=1e-9)
+    # A window that moves away from the perturbation loses its support: the faster the
+    # window moves, the lower lambda(v).
+    assert lam[1] < lam[0] - 0.05
+    assert lam[2] < lam[1]
+
+
+def test_comoving_windowed_returns_floor_when_perturbation_vanishes():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # a = 0 gives f' = 0, so the perturbation is annihilated at every step.
+    lam = comoving_lyapunov_windowed_logistic(
+        a=0.0, eps=0.3, N=100, T=20, v_values=[0.0], n_transient=10, w=3, i0=40
+    )
+
+    assert lam[0] == -20.0
+
+
+def test_comoving_windowed_is_deterministic_and_seed_dependent():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    kwargs = {
+        "a": 1.95,
+        "eps": 0.3,
+        "N": 120,
+        "T": 40,
+        "v_values": [0.0, 0.3],
+        "n_transient": 200,
+        "w": 4,
+        "i0": 30,
+    }
+
+    first = comoving_lyapunov_windowed_logistic(**kwargs, seed=7)
+    again = comoving_lyapunov_windowed_logistic(**kwargs, seed=7)
+    other = comoving_lyapunov_windowed_logistic(**kwargs, seed=8)
+
+    np.testing.assert_array_equal(first, again)
+    assert not np.allclose(first, other)
+
+
+def test_comoving_windowed_rejects_windows_that_wrap_the_periodic_lattice():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_lyapunov_windowed_logistic
+
+    # Right edge: i0 + T + w = 100 + 50 + 5 = 155 >= N.
+    with pytest.raises(ValueError, match="outside"):
+        comoving_lyapunov_windowed_logistic(
+            a=1.9, eps=0.3, N=150, T=50, v_values=[0.0, 1.0], n_transient=5, w=5, i0=100
+        )
+    # Left edge: a negative velocity moves the window below site 0.
+    with pytest.raises(ValueError, match="outside"):
+        comoving_lyapunov_windowed_logistic(
+            a=1.9, eps=0.3, N=500, T=50, v_values=[-1.0], n_transient=5, w=5, i0=20
+        )
+
+
+def test_comoving_zero_crossings_interpolate_between_grid_points():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
+
+    v = np.linspace(0.0, 1.0, 11)
+
+    # Linear lambda with its root at v = 0.25, between the grid points 0.2 and 0.3.
+    assert comoving_zero_crossings(v, 0.5 - 2.0 * v) == pytest.approx([0.25])
+    # A root exactly on a grid point is reported once.
+    assert comoving_zero_crossings(v, 0.5 - v) == pytest.approx([0.5])
+    # Several crossings, no crossing.
+    assert len(comoving_zero_crossings(v, np.cos(3.0 * np.pi * v))) == 3
+    assert comoving_zero_crossings(v, np.ones_like(v)) == []
+
+
+def test_sec08_comoving_cache_shows_convective_instability_and_wide_window():
+    from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
+
+    with np.load(comoving_figure.OUTPUT_NPZ, allow_pickle=False) as data:
+        v = data["v_values"]
+        a_values = data["a_values"]
+        N, T, w, i0 = (int(data[key][0]) for key in ("N", "T", "w", "i0"))
+        lam = {a: data[f"lambda_a{a:.2f}"] for a in (1.70, 1.85, 1.95)}
+        stored = {a: data[f"zc_a{a:.2f}"] for a in (1.70, 1.85, 1.95)}
+
+    np.testing.assert_allclose(a_values, [1.70, 1.85, 1.95])
+    np.testing.assert_allclose(v, np.linspace(0.0, 1.0, 51))
+    # The moving window never reaches the lattice boundary: no wrap-around.
+    assert i0 - w >= 0
+    assert i0 + int(np.floor(v.max() * T)) + w < N
+    for a in lam:
+        assert lam[a].shape == (51,)
+        assert np.all(np.isfinite(lam[a]))
+        np.testing.assert_allclose(stored[a], comoving_zero_crossings(v, lam[a]), rtol=1e-12)
+
+    # Defect and fully developed turbulence: lambda(0) > 0, lambda(1) < -1, and one
+    # propagation speed v_p, larger for the more turbulent state.
+    for a in (1.85, 1.95):
+        assert lam[a][0] > 0.25
+        assert lam[a][-1] < -1.0
+        assert stored[a].size == 1
+        assert 0.4 < stored[a][0] < 0.55
+    assert stored[1.95][0] > stored[1.85][0]
+    # Pattern selection: weaker local growth and an oscillating lambda(v) near the origin.
+    assert 0.0 < lam[1.70][0] < 0.1
+    assert stored[1.70].size >= 2
 
 
 def test_comoving_figure_main_computes_when_cache_missing(monkeypatch, tmp_path):
@@ -544,64 +701,6 @@ def test_gcm_clusters_detect_clusters_matches_shared_helper():
     )
 
 
-def test_gcm_clusters_compute_collective_defaults_a_values_when_omitted():
-    # a_values=None takes the np.linspace(1.4, 2.0, 100) default
-    # (src/dynachaos/cml/gcm_clusters.py:137); n_transient/n_measure are
-    # overridden to zero cost so the 100-value sweep still runs in well
-    # under a second.
-    payload = gcm_clusters.compute_collective(
-        n_sites=4,
-        n_transient=0,
-        n_measure=1,
-        renorm_interval=1,
-        seed=1,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    assert payload["a_values"].shape == (100,)
-    np.testing.assert_allclose(payload["a_values"][0], 1.4)
-    np.testing.assert_allclose(payload["a_values"][-1], 2.0)
-
-
-def test_gcm_clusters_compute_collective_zero_perturbation_reports_zero_lyapunov():
-    payload = gcm_clusters.compute_collective(
-        n_sites=4,
-        a_values=np.array([1.5]),
-        n_transient=0,
-        n_measure=4,
-        renorm_interval=1,
-        h_delta=0.0,
-        seed=1,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    # h_delta=0 means the two copies never separate, so n_renorm stays 0 and
-    # the fallback branch (src/dynachaos/cml/gcm_clusters.py:191) reports 0.
-    assert payload["lyap_c"][0] == 0.0
-
-
-def test_gcm_clusters_compute_collective_writes_progress_checkpoints(tmp_path):
-    output_path = tmp_path / "collective_lyapunov.npz"
-
-    gcm_clusters.compute_collective(
-        n_sites=4,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=3,
-        output_path=output_path,
-        progress_interval=1,
-    )
-
-    with np.load(output_path) as saved:
-        # The final checkpoint (progress_interval=1 fires every a) leaves both
-        # entries in the cache.
-        assert saved["a_values"].shape == (2,)
-
-
 def test_gcm_clusters_plot_clusters_writes_png(monkeypatch, tmp_path):
     png_path = tmp_path / "gcm_clusters.png"
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", png_path)
@@ -615,147 +714,134 @@ def test_gcm_clusters_plot_clusters_writes_png(monkeypatch, tmp_path):
     assert png_path.stat().st_size > 0
 
 
-def test_gcm_clusters_plot_collective_writes_png(monkeypatch, tmp_path):
-    png_path = tmp_path / "collective_lyapunov.png"
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", png_path)
-
-    payload = gcm_clusters.compute_collective(
-        n_sites=8,
-        a_values=np.linspace(1.4, 2.0, 6),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=7,
-        output_path=None,
-        progress_interval=0,
-    )
-
-    gcm_clusters.plot_collective(payload)
-
-    assert png_path.stat().st_size > 0
-
-
-def test_gcm_clusters_plot_collective_fills_sustained_positive_band(monkeypatch, tmp_path):
-    png_path = tmp_path / "collective_lyapunov.png"
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", png_path)
-
-    # A run of >= min_run=4 positive entries triggers the shaded
-    # sustained-lambda_c > 0 fill_between branch (gcm_clusters.py:329-341).
-    a_values = np.linspace(1.4, 2.0, 8)
-    lyap_c = np.array([-0.3, -0.2, -0.1, 0.1, 0.2, 0.3, 0.2, -0.1])
-    payload = {
-        "a_values": a_values,
-        "lyap_c": lyap_c,
-        "eps": np.array([0.1]),
-        "N": np.array([8]),
-    }
-
-    gcm_clusters.plot_collective(payload)
-
-    assert png_path.stat().st_size > 0
-
-
 def test_gcm_clusters_main_computes_and_plots_when_cache_missing(monkeypatch, tmp_path):
     cluster_npz = tmp_path / "gcm_clusters.npz"
     cluster_png = tmp_path / "gcm_clusters.png"
-    coll_npz = tmp_path / "collective_lyapunov.npz"
-    coll_png = tmp_path / "collective_lyapunov.png"
     monkeypatch.setattr(gcm_clusters, "FIG_DIR", tmp_path)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_NPZ", cluster_npz)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", cluster_png)
-    monkeypatch.setattr(gcm_clusters, "COLL_NPZ", coll_npz)
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", coll_png)
 
     original_compute_clusters = gcm_clusters.compute_clusters
-    original_compute_collective = gcm_clusters.compute_collective
 
     def fake_compute_clusters(**_kwargs):
         return original_compute_clusters(
             n_sites=8, n_transient=2, n_record=4, seed=1, output_path=None
         )
 
-    def fake_compute_collective(**_kwargs):
-        return original_compute_collective(
-            n_sites=8,
-            a_values=np.array([1.4, 1.6]),
-            n_transient=1,
-            n_measure=2,
-            renorm_interval=1,
-            seed=1,
-            output_path=None,
-            progress_interval=0,
-        )
-
     monkeypatch.setattr(gcm_clusters, "compute_clusters", fake_compute_clusters)
-    monkeypatch.setattr(gcm_clusters, "compute_collective", fake_compute_collective)
 
     gcm_clusters.main()
 
     assert cluster_png.stat().st_size > 0
-    assert coll_png.stat().st_size > 0
 
 
-def test_gcm_clusters_main_plots_from_cache_when_both_files_exist(monkeypatch, tmp_path):
+def test_gcm_clusters_main_plots_from_cache_when_file_exists(monkeypatch, tmp_path):
     cluster_npz = tmp_path / "gcm_clusters.npz"
     cluster_png = tmp_path / "gcm_clusters.png"
-    coll_npz = tmp_path / "collective_lyapunov.npz"
-    coll_png = tmp_path / "collective_lyapunov.png"
     monkeypatch.setattr(gcm_clusters, "FIG_DIR", tmp_path)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_NPZ", cluster_npz)
     monkeypatch.setattr(gcm_clusters, "CLUSTER_PNG", cluster_png)
-    monkeypatch.setattr(gcm_clusters, "COLL_NPZ", coll_npz)
-    monkeypatch.setattr(gcm_clusters, "COLL_PNG", coll_png)
 
     gcm_clusters.compute_clusters(
         n_sites=8, n_transient=2, n_record=4, seed=1, output_path=cluster_npz
     )
-    gcm_clusters.compute_collective(
-        n_sites=8,
-        a_values=np.array([1.4, 1.6]),
-        n_transient=1,
-        n_measure=2,
-        renorm_interval=1,
-        seed=1,
-        output_path=coll_npz,
-        progress_interval=0,
-    )
 
-    # Both caches already exist, so main() takes the "Loaded" branch
-    # (gcm_clusters.py:369-370, 378-379) rather than recomputing.
+    # The cache already exists, so main() takes the "Loaded" branch rather than recomputing.
     gcm_clusters.main()
 
     assert cluster_png.stat().st_size > 0
-    assert coll_png.stat().st_size > 0
 
 
 # ---------------------------------------------------------------------------
 # globally_coupled
 #
-# compute() runs 100000-step mean-field samples for 5 lattice sizes, then an
-# 8 x 5 (N, a) grid each with a 5000 step transient plus a 50000 step sample
-# (src/dynachaos/cml/globally_coupled.py:35-92) -- not reachable at test
-# scale. plot_msd/plot_distribution are exercised with tiny synthetic
+# compute() runs 100000-step mean-field samples for 5 lattice sizes, and
+# compute_msd_sweep() runs 5 a values x 8 sizes x 8 seeds, each with a 2000 step
+# transient plus a 10000 step sample (src/dynachaos/cml/globally_coupled.py)
+# -- not reachable at test scale. compute_msd_sweep() is checked on a tiny
+# sweep; plot_msd/plot_distribution are exercised with tiny synthetic
 # payloads shaped like the real schema.
 # ---------------------------------------------------------------------------
+
+
+def _msd_payload(a_values, N_values, n_seeds=3):
+    """A synthetic MSD payload in the schema of compute_msd_sweep (MSD = A/N + B)."""
+    a_values = np.asarray(a_values, dtype=float)
+    N_values = np.asarray(N_values)
+    msd_mean = np.outer(1.0 / (a_values - 1.5), 1.0 / N_values) + 1e-3
+    msd_std = 0.1 * msd_mean
+    return {
+        "a_values": a_values,
+        "N_values": N_values,
+        "eps": np.array([0.1]),
+        "n_seeds": np.array([n_seeds]),
+        "msd_all": np.repeat(msd_mean[:, :, None], n_seeds, axis=2),
+        "msd_mean": msd_mean,
+        "msd_std": msd_std,
+        "msd_stderr": msd_std / np.sqrt(n_seeds),
+        "fits_A": 1.0 / (a_values - 1.5),
+        "fits_B": np.full(a_values.shape, 1e-3),
+        "fits_B_stderr": np.full(a_values.shape, 1e-5),
+        "fits_r2": np.ones(a_values.shape),
+    }
 
 
 def test_globally_coupled_plot_msd_writes_png(monkeypatch, tmp_path):
     png_path = tmp_path / "gcm_msd.png"
     monkeypatch.setattr(globally_coupled, "GCM_PNG", png_path)
 
-    N_grid = np.array([100, 200, 500, 1000])
-    a_for_msd = np.array([1.80, 1.85, 1.92, 1.95, 1.99])
-    msd_grid = np.outer(1.0 / (a_for_msd - 1.5), 1.0 / N_grid)
-
-    data = {
-        "N_grid": N_grid,
-        "msd_grid": msd_grid,
-        "a_for_msd": a_for_msd,
-        "eps": np.array([0.1]),
-    }
+    data = _msd_payload([1.80, 1.85, 1.92, 1.95, 1.99], [100, 200, 500, 1000])
 
     globally_coupled.plot_msd(data)
 
+    assert png_path.stat().st_size > 0
+
+
+def test_globally_coupled_msd_sweep_fits_saturation_and_writes_payload(tmp_path):
+    output_path = tmp_path / "gcm_msd.npz"
+
+    payload = globally_coupled.compute_msd_sweep(
+        a_values=(1.99,),
+        N_values=(20, 40, 80, 160),
+        n_seeds=3,
+        n_transient=50,
+        n_sample=300,
+        output_path=output_path,
+    )
+
+    assert payload["msd_all"].shape == (1, 4, 3)
+    np.testing.assert_allclose(payload["msd_mean"], payload["msd_all"].mean(axis=2))
+    np.testing.assert_allclose(payload["msd_std"], payload["msd_all"].std(axis=2, ddof=1))
+    np.testing.assert_allclose(payload["msd_stderr"], payload["msd_std"] / np.sqrt(3))
+    # The stored fit is the least-squares line of the seed-averaged MSD against 1 / N.
+    slope, intercept = np.polyfit(1.0 / payload["N_values"], payload["msd_mean"][0], 1)
+    assert payload["fits_A"][0] == pytest.approx(slope)
+    assert payload["fits_B"][0] == pytest.approx(intercept)
+    assert 0.0 <= payload["fits_r2"][0] <= 1.0
+    with np.load(output_path, allow_pickle=False) as saved:
+        assert set(saved.files) == set(payload)
+        np.testing.assert_array_equal(saved["msd_all"], payload["msd_all"])
+
+
+def test_globally_coupled_msd_single_seed_has_nan_spread_and_plots_without_error_bars(
+    monkeypatch, tmp_path
+):
+    png_path = tmp_path / "gcm_msd.png"
+    monkeypatch.setattr(globally_coupled, "GCM_PNG", png_path)
+
+    payload = globally_coupled.compute_msd_sweep(
+        a_values=(1.99,),
+        N_values=(20, 40, 80, 160),
+        n_seeds=1,
+        n_transient=50,
+        n_sample=300,
+        output_path=None,
+    )
+
+    assert payload["msd_all"].shape == (1, 4, 1)
+    assert np.all(np.isnan(payload["msd_std"]))
+    assert np.all(np.isnan(payload["msd_stderr"]))
+    globally_coupled.plot_msd(payload)
     assert png_path.stat().st_size > 0
 
 
@@ -782,7 +868,9 @@ def test_globally_coupled_main_plots_from_cache(monkeypatch, tmp_path):
     gcm_png = tmp_path / "gcm_msd.png"
     dist_png = tmp_path / "gcm_distribution.png"
     monkeypatch.setattr(globally_coupled, "FIG_DIR", tmp_path)
+    msd_npz_path = tmp_path / "gcm_msd.npz"
     monkeypatch.setattr(globally_coupled, "GCM_NPZ", npz_path)
+    monkeypatch.setattr(globally_coupled, "MSD_NPZ", msd_npz_path)
     monkeypatch.setattr(globally_coupled, "GCM_PNG", gcm_png)
     monkeypatch.setattr(globally_coupled, "DIST_PNG", dist_png)
 
@@ -794,10 +882,8 @@ def test_globally_coupled_main_plots_from_cache(monkeypatch, tmp_path):
         payload[f"N_{N}_h"] = h
         payload[f"N_{N}_mean"] = np.array([h.mean()])
         payload[f"N_{N}_msd"] = np.array([h.var()])
-    payload["a_for_msd"] = np.array([1.80, 1.99])
-    payload["N_grid"] = np.array([100, 400])
-    payload["msd_grid"] = np.array([[0.02, 0.01], [0.05, 0.03]])
     np.savez_compressed(npz_path, **payload)
+    np.savez_compressed(msd_npz_path, **_msd_payload([1.80, 1.99], [100, 400]))
 
     globally_coupled.main()
 
@@ -810,9 +896,16 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
     gcm_png = tmp_path / "gcm_msd.png"
     dist_png = tmp_path / "gcm_distribution.png"
     monkeypatch.setattr(globally_coupled, "FIG_DIR", tmp_path)
+    msd_npz_path = tmp_path / "gcm_msd.npz"
     monkeypatch.setattr(globally_coupled, "GCM_NPZ", npz_path)
+    monkeypatch.setattr(globally_coupled, "MSD_NPZ", msd_npz_path)
     monkeypatch.setattr(globally_coupled, "GCM_PNG", gcm_png)
     monkeypatch.setattr(globally_coupled, "DIST_PNG", dist_png)
+
+    def fake_msd_sweep():
+        np.savez_compressed(msd_npz_path, **_msd_payload([1.80, 1.99], [100, 400]))
+
+    monkeypatch.setattr(globally_coupled, "compute_msd_sweep", fake_msd_sweep)
 
     def fake_compute():
         rng = np.random.default_rng(11)
@@ -823,9 +916,6 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
             payload[f"N_{N}_h"] = h
             payload[f"N_{N}_mean"] = np.array([h.mean()])
             payload[f"N_{N}_msd"] = np.array([h.var()])
-        payload["a_for_msd"] = np.array([1.80, 1.99])
-        payload["N_grid"] = np.array([100, 400])
-        payload["msd_grid"] = np.array([[0.02, 0.01], [0.05, 0.03]])
         np.savez_compressed(npz_path, **payload)
 
     monkeypatch.setattr(globally_coupled, "compute", fake_compute)
@@ -833,6 +923,7 @@ def test_globally_coupled_main_computes_when_cache_missing(monkeypatch, tmp_path
     globally_coupled.main()
 
     assert npz_path.exists()
+    assert msd_npz_path.exists()
     assert gcm_png.stat().st_size > 0
     assert dist_png.stat().st_size > 0
 

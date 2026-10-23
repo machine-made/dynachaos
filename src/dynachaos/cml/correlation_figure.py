@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """
-correlation_figure: Spatial correlation decay and Lyapunov density convergence.
+correlation_figure: Spatial correlation decay and KS entropy density of the logistic CML.
 
-Two-panel figure for Section 8 (spatiotemporal intermittency):
+Two-panel figure for Section 8 (thermodynamics of spatiotemporal chaos):
   (a) Spatial autocorrelation |C(r)|/C(0) vs separation r (semilogy)
-  (b) Maximal Lyapunov exponent density lambda_max/L vs subsystem size L
+  (b) Kolmogorov-Sinai entropy density h_KS(L)/L vs subsystem size L, where h_KS(L)
+      is the sum of the positive Lyapunov exponents of the Jacobian of an L-site
+      subsystem (the L x L sub-block of the full lattice Jacobian)
+
+When the correlation length xi is much smaller than the lattice, the density
+h_KS(L)/L is constant in L (extensive, a thermodynamic quantity).  A pattern-selection
+state with long-range order has no such plateau.
 
 CML model: logistic f(x) = 1 - a*x^2, g = f, periodic BC, N=200, eps=0.3.
 Four regimes:  a=1.5 (frozen random), a=1.7 (pattern selection),
@@ -22,11 +28,20 @@ from dynachaos.cml.primitives import (
 from dynachaos.cml.primitives import (
     cml_step_logistic as cml_step,
 )
-from dynachaos.io.paths import safe_load, section_dir
+from dynachaos.io.paths import load_or_compute_npz, section_dir
 
 FIG_DIR = section_dir("sec08_sti")
 CORR_NPZ = FIG_DIR / "correlation_decay.npz"
 CORR_PNG = FIG_DIR / "correlation_decay.png"
+REQUIRED_KEYS = (
+    "a_corr",
+    "r_vals",
+    "all_corr",
+    "xi_values",
+    "a_lyap",
+    "L_vals",
+    "h_density",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -34,177 +49,119 @@ CORR_PNG = FIG_DIR / "correlation_decay.png"
 # ---------------------------------------------------------------------------
 
 
-def compute_correlations():
-    """Compute spatial autocorrelation C(r) for multiple a values.
+def compute_correlations(
+    N=200,
+    eps=0.3,
+    a_values=(1.50, 1.70, 1.85, 1.95),
+    n_transient=5000,
+    n_sample=1000,
+    sample_interval=10,
+    seed=42,
+):
+    """Compute the spatial autocorrelation C(r) for several a values via FFT.
 
-    C(r) = <x(i) x(i+r)> - <x(i)> <x(i+r)>, averaged over sites and time.
-    Normalized so C(0) = 1.
+    C(r) = <x(i) x(i+r)> - <x>^2, averaged over sites and ``n_sample`` snapshots
+    taken every ``sample_interval`` steps, and normalised so that C(0) = 1.  One
+    generator seeded with ``seed`` draws the initial lattice of every a value in turn.
     """
-    N = 200
-    eps = 0.3
-    a_values = np.array([1.5, 1.7, 1.85, 1.95])
-    n_transient = 5000
-    n_sample = 1000
-    sample_interval = 10
-    rng = np.random.default_rng(42)
-
+    rng = np.random.default_rng(seed)
     r_max = N // 2
-    all_corr = np.empty((len(a_values), r_max + 1))
+    all_corr = np.empty((len(a_values), r_max + 1), dtype=np.float64)
 
     for ia, a in enumerate(a_values):
-        print(f"  Correlation: a={a}")
+        print(f"  Spatial correlation: a = {a}...")
         x = rng.uniform(-0.5, 0.5, N)
-
-        # Transient
         for _ in range(n_transient):
             x = cml_step(x, a, eps)
 
-        # Collect decorrelated snapshots
-        snapshots = np.empty((n_sample, N))
+        # Decorrelated snapshots
+        snapshots = np.empty((n_sample, N), dtype=np.float64)
         for s in range(n_sample):
             for _ in range(sample_interval):
                 x = cml_step(x, a, eps)
             snapshots[s] = x
 
-        # Compute spatial autocorrelation via FFT (much faster than direct)
-        # C(r) = <x(i) x(i+r)> - <x>^2, averaged over time
-        mean_x = snapshots.mean()
-        fluct = snapshots - mean_x
-        corr_sum = np.zeros(r_max + 1)
-
+        # Circular autocorrelation of each fluctuation snapshot via FFT
+        fluct = snapshots - snapshots.mean()
+        corr_sum = np.zeros(r_max + 1, dtype=np.float64)
         for s in range(n_sample):
-            # Full circular correlation via FFT
             fft_f = np.fft.rfft(fluct[s])
             power = np.real(fft_f * np.conj(fft_f))
             full_corr = np.fft.irfft(power, n=N) / N
             corr_sum += full_corr[: r_max + 1]
 
         corr_sum /= n_sample
-        # Normalize: C(r)/C(0) so C(0) = 1
         if abs(corr_sum[0]) > 1e-15:
             all_corr[ia] = corr_sum / corr_sum[0]
         else:
             all_corr[ia] = corr_sum
 
-    return a_values, np.arange(r_max + 1), all_corr
+    return np.array(a_values, dtype=np.float64), np.arange(r_max + 1), all_corr
 
 
-def compute_lyapunov_density():
-    """Compute subsystem maximal Lyapunov exponent density for multiple a, L.
+def fit_correlation_length(r, corr_normalized):
+    """Correlation length xi: where the initial decay of |C(r)| first reaches 1/e.
 
-    For each a value and subsystem size L, the full N=200 CML is evolved, but
-    a single perturbation vector of length L (for sites 0..L-1) is propagated
-    using the local Jacobian.  The resulting maximal exponent, divided by L,
-    gives the Lyapunov density.
+    Scans |C(r)|/C(0) from r = 0 and interpolates linearly between the two sites
+    that bracket e^-1.  Only the initial decay is used, so an oscillating
+    correlation (pattern selection) gives the length of its first fall, not that of
+    its envelope.  Returns NaN when |C| never falls to 1/e.
     """
-    N = 200
-    eps = 0.3
-    a_values = np.array([1.5, 1.7, 1.85, 1.95])
-    L_values = np.array([10, 20, 40, 60, 80, 100, 150, 200])
-    n_transient = 5000
-    n_iter = 20000
-    rng = np.random.default_rng(42)
+    abs_corr = np.abs(corr_normalized)
+    target = np.exp(-1.0)
+    for idx in range(1, len(abs_corr)):
+        if abs_corr[idx] <= target:
+            x0, x1 = float(r[idx - 1]), float(r[idx])
+            y0, y1 = abs_corr[idx - 1], abs_corr[idx]
+            if y0 != y1:
+                return x0 + (target - y0) * (x1 - x0) / (y1 - y0)
+            return x1
+    return float("nan")
 
-    density = np.empty((len(a_values), len(L_values)))
+
+# ---------------------------------------------------------------------------
+# Panel 2: KS entropy density
+# ---------------------------------------------------------------------------
+
+
+def compute_ks_entropy_density(
+    N=200,
+    eps=0.3,
+    a_values=(1.50, 1.70, 1.85, 1.95),
+    L_values=(10, 20, 30, 40, 60, 80, 100),
+    n_transient=2000,
+    n_iter=2000,
+    seed=42,
+):
+    """Compute the KS entropy density h_KS(L)/L for several subsystem sizes L.
+
+    The full N-site lattice is evolved; the L x L sub-block of its Jacobian
+    (sites 0..L-1) is propagated with QR re-orthonormalisation, giving L exponents.
+    h_KS(L) is the sum of the positive ones.  The lattice of the a value with
+    index ``ia`` starts from ``np.random.default_rng(seed + ia)``.
+    """
+    h_density = np.empty((len(a_values), len(L_values)), dtype=np.float64)
 
     for ia, a in enumerate(a_values):
-        print(f"  Lyapunov density: a={a}")
+        print(f"  KS entropy density: a = {a}...")
+        rng = np.random.default_rng(seed + ia)
         x = rng.uniform(-0.5, 0.5, N)
-
-        # Transient on full lattice
         for _ in range(n_transient):
             x = cml_step(x, a, eps)
 
         for iL, L in enumerate(L_values):
-            # Reset trajectory from the post-transient state
             x_run = x.copy()
-
-            # Random unit tangent vector of length L
-            v = rng.standard_normal(L)
-            v /= np.linalg.norm(v)
-
-            log_sum = 0.0
+            Q = np.eye(L, dtype=np.float64)
+            exps = np.zeros(L, dtype=np.float64)
             for _ in range(n_iter):
-                # Build subsystem Jacobian and propagate
-                J_sub = _cml_jacobian_subblock(x_run, a, eps, L)
-                v = J_sub @ v
-                norm_v = np.linalg.norm(v)
-                if norm_v > 0:
-                    log_sum += np.log(norm_v)
-                    v /= norm_v
-                else:
-                    log_sum += -100.0
-                    v = rng.standard_normal(L)
-                    v /= np.linalg.norm(v)
-                # Evolve full lattice
                 x_run = cml_step(x_run, a, eps)
+                J = _cml_jacobian_subblock(x_run, a, eps, L)
+                Q, R = np.linalg.qr(J @ Q)
+                exps += np.log(np.abs(np.diag(R)))
+            exps /= n_iter
+            h_density[ia, iL] = np.sum(exps[exps > 0]) / L
 
-            lam_max = log_sum / n_iter
-            density[ia, iL] = lam_max / L
-
-    return a_values, L_values, density
-
-
-# ---------------------------------------------------------------------------
-# Exponential fit for correlation length
-# ---------------------------------------------------------------------------
-
-
-def _fit_correlation_length(r, corr_normalized):
-    """Fit |C(r)| ~ exp(-r/xi) to estimate correlation length xi.
-
-    Uses only the initial decorrelation head.  The tail of a finite lattice
-    autocorrelation is dominated by sampling noise and oscillatory remnants; if
-    included, it produces spuriously long correlation lengths.
-    """
-    abs_corr = np.abs(corr_normalized)
-    target = np.exp(-1.0)
-    noise_floor = max(1e-3, 5.0 / np.sqrt(abs_corr.size * 1000.0))
-
-    head_indices = []
-    previous = abs_corr[0]
-    for idx in range(1, len(abs_corr)):
-        value = abs_corr[idx]
-        head_indices.append(idx)
-        if value <= target or value <= noise_floor or value > previous:
-            break
-        previous = value
-
-    head_indices = np.array(head_indices, dtype=int)
-    stop_idx = int(head_indices[-1]) if head_indices.size else 0
-    stopped_at_target = abs_corr[stop_idx] <= target if stop_idx else False
-    near_field = min(len(abs_corr) - 1, 8)
-    later_near_field_peaks = stop_idx + 1 <= near_field and np.any(
-        abs_corr[stop_idx + 1 : near_field + 1] > target
-    )
-    if stopped_at_target and not later_near_field_peaks:
-        x0, x1 = float(r[stop_idx - 1]), float(r[stop_idx])
-        y0, y1 = abs_corr[stop_idx - 1], abs_corr[stop_idx]
-        if y0 != y1:
-            return x0 + (target - y0) * (x1 - x0) / (y1 - y0)
-        return x1
-
-    if head_indices.size >= 3:
-        r_fit = r[head_indices].astype(float)
-        log_c = np.log(np.clip(abs_corr[head_indices], 1e-15, None))
-        coeffs = np.polyfit(r_fit, log_c, 1)
-        slope = coeffs[0]
-        if slope < 0:
-            return -1.0 / slope
-
-    # Oscillatory pattern-selection correlations need a near-field envelope
-    # estimate instead of a fit through the full tail.
-    envelope = np.maximum.accumulate(abs_corr[::-1])[::-1]
-    crossing = np.flatnonzero(envelope[1 : near_field + 1] <= target)
-    if crossing.size:
-        idx = int(crossing[0] + 1)
-        x0, x1 = float(r[idx - 1]), float(r[idx])
-        y0, y1 = envelope[idx - 1], envelope[idx]
-        if y0 != y1:
-            return x0 + (target - y0) * (x1 - x0) / (y1 - y0)
-        return x1
-
-    return float(near_field)
+    return np.array(a_values, dtype=np.float64), np.array(L_values, dtype=np.int64), h_density
 
 
 # ---------------------------------------------------------------------------
@@ -218,14 +175,12 @@ def compute():
 
     print("Computing spatial correlations...")
     a_corr, r_vals, all_corr = compute_correlations()
-
-    print("Computing Lyapunov density convergence...")
-    a_lyap, L_vals, density = compute_lyapunov_density()
-
-    # Fit correlation lengths
     xi_values = np.array(
-        [_fit_correlation_length(r_vals, all_corr[ia]) for ia in range(len(a_corr))]
+        [fit_correlation_length(r_vals, all_corr[ia]) for ia in range(len(a_corr))]
     )
+
+    print("Computing KS entropy density...")
+    a_lyap, L_vals, h_density = compute_ks_entropy_density()
 
     np.savez_compressed(
         CORR_NPZ,
@@ -235,7 +190,7 @@ def compute():
         xi_values=xi_values,
         a_lyap=a_lyap,
         L_vals=L_vals,
-        density=density,
+        h_density=h_density,
     )
     print(f"Saved {CORR_NPZ}")
 
@@ -246,7 +201,7 @@ def compute():
 
 
 def plot(data):
-    """Two-panel figure: correlation decay + Lyapunov density."""
+    """Two-panel figure: correlation decay + KS entropy density."""
     import matplotlib.pyplot as plt
 
     from dynachaos.utils.style import (
@@ -264,7 +219,7 @@ def plot(data):
     xi_values = data["xi_values"]
     a_lyap = data["a_lyap"]
     L_vals = data["L_vals"]
-    density = data["density"]
+    h_density = data["h_density"]
 
     labels = [
         r"$a=1.50$",
@@ -277,7 +232,7 @@ def plot(data):
     fig, (ax1, ax2) = plt.subplots(
         1,
         2,
-        figsize=(spec.figsize[0], spec.figsize[1] + 0.2),
+        figsize=(spec.figsize[0], spec.figsize[1] + 0.25),
         gridspec_kw={"width_ratios": (1.25, 0.95)},
     )
 
@@ -299,7 +254,7 @@ def plot(data):
         ax1.semilogy(r_plot, c_plot, label=label, **sty)
 
         if np.isfinite(xi) and xi > 0:
-            r_fit_max = min(3.0 * xi, r_plot.max() if r_plot.size else xi)
+            r_fit_max = min(3.0 * xi, float(r_plot.max()) if r_plot.size else xi)
             r_fit = np.linspace(0.0, r_fit_max, 100)
             ax1.semilogy(
                 r_fit,
@@ -326,14 +281,15 @@ def plot(data):
         bbox_to_anchor=(0.5, 1.01),
     )
 
-    # --- Panel (b): Lyapunov density convergence ---
+    # --- Panel (b): KS entropy density extensivity ---
     for ia in range(len(a_lyap)):
         sty = series_style(ia)
-        ax2.plot(L_vals, density[ia], markevery=1, **sty)
+        ax2.plot(L_vals, h_density[ia], markevery=1, **sty)
 
     ax2.set_xlabel(r"Subsystem size $L$")
-    ax2.set_ylabel(r"$\lambda_{\max}/L$")
-    ax2.set_title(r"(b) Finite-size proxy $\lambda_{\max}/L$", loc="left")
+    ax2.set_ylabel(r"$h_{\mathrm{KS}}(L)/L$")
+    ax2.set_title(r"(b) KS entropy density $h_{\mathrm{KS}}(L)/L$", loc="left")
+    ax2.set_ylim(0.0, 1.25 * float(np.max(h_density)))
     apply_axes_polish(ax2, kind="double", title_loc="left", grid=False)
 
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
@@ -349,13 +305,12 @@ def plot(data):
 
 def main():
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        data = safe_load(CORR_NPZ)
-        print(f"Loaded {CORR_NPZ}")
-    except FileNotFoundError:
-        print("Computing correlation and Lyapunov density data...")
-        compute()
-        data = safe_load(CORR_NPZ)
+    data = load_or_compute_npz(
+        CORR_NPZ,
+        "correlation and Lyapunov density data",
+        compute,
+        required_keys=REQUIRED_KEYS,
+    )
     plot(data)
 
 
