@@ -1315,6 +1315,24 @@ def test_compare_all_main_computes_all_four_sections_when_cache_missing(monkeypa
 # ── Coverage: Permutation entropy edge cases ──────────────────────────────────
 
 
+@pytest.mark.parametrize("use_rust", [True, False])
+def test_permutation_entropy_strided_column_view_matches_contiguous_copy(monkeypatch, use_rust):
+    import dynachaos.diagnostics.permutation as permutation_module
+
+    if use_rust and not permutation_module._RUST_AVAILABLE:
+        pytest.skip("Rust kernel not available")
+    monkeypatch.setattr(permutation_module, "_RUST_AVAILABLE", use_rust)
+
+    states = np.random.default_rng(0).random((400, 4))
+    column = states[:, 1]
+    assert not column.flags["C_CONTIGUOUS"]
+    copy = column.copy()
+
+    assert permutation_entropy(column, d=4) == permutation_entropy(copy, d=4)
+    assert complexity_entropy(column, d=4) == complexity_entropy(copy, d=4)
+    assert ordinal_distribution(column, d=4, tau=2) == ordinal_distribution(copy, d=4, tau=2)
+
+
 def test_permutation_entropy_sweep_default_d_values():
     """permutation_entropy_sweep uses default d_values when None (lines 281-282)."""
     x = logistic_series(n=200, a=1.99, burn=100)

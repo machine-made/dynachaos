@@ -127,7 +127,7 @@ def _series_and_trajectory(system, p):
         traj = delayed_logistic_trajectory(p, A=0.3, n_transient=10_000, n_record=2000)
     else:
         states = _coupled_state_series(p, 20_000, 5000)
-        series, traj = np.ascontiguousarray(states[:, 0]), _coupled_state_series(p, 20_000, 2000)
+        series, traj = states[:, 0], _coupled_state_series(p, 20_000, 2000)
     for arr in (series, traj):
         if not np.all(np.isfinite(arr)):
             raise FloatingPointError(f"non-finite orbit: {system}, parameter {p}")
