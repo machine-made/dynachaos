@@ -667,7 +667,8 @@ def export_comoving_lyapunov() -> dict[str, Any]:
         if zc_key in npz:
             zc = npz[zc_key]
             if zc.size == 1 and np.isfinite(zc[0]):
-                marks.append({"axis": "x", "value": _round_sig(float(zc[0])), "label": f"v_p({a:.2f}) ≈ {zc[0]:.2f}"})
+                mark_label = f"v_p({a:.2f}) ≈ {zc[0]:.2f}"
+                marks.append({"axis": "x", "value": _round_sig(float(zc[0])), "label": mark_label})
 
     return {
         "figure": source,
