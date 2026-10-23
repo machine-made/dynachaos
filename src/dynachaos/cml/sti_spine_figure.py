@@ -25,7 +25,7 @@ OUTPUT_NPZ = FIG_DIR / "sti_spine.npz"
 OUTPUT_PNG = FIG_DIR / "sti_spine.png"
 _THIS_FILE = Path(__file__).resolve()
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4  # 4: KS distance at support values (tied integer lengths)
 TURBULENT_ONSET_FRACTION = 0.001
 FIT_FIELDS = (
     "x_min",
@@ -107,14 +107,14 @@ def fit_tail_models(lengths, x_min=2):
 
     x_max = int(np.max(tail))
     x_supp = np.arange(x_min, x_max + 1, dtype=np.float64)
-    sorted_tail = np.sort(tail)
-    emp_cdf = np.arange(1, n + 1) / n
+    # The lengths are integers with many ties. Compare the CDFs at each support value, not at
+    # each sample: the rank of a tied sample is not its CDF value.
+    emp_cdf = np.searchsorted(np.sort(tail), x_supp, side="right") / n
     sum_log = np.sum(np.log(tail))
     sum_tail = np.sum(tail)
 
     def ks_distance(pmf):
-        cdf = np.cumsum(pmf)
-        return float(np.max(np.abs(emp_cdf - cdf[(sorted_tail - x_min).astype(int)])))
+        return float(np.max(np.abs(emp_cdf - np.cumsum(pmf))))
 
     # 1. Power law
     def nll_pl(a):

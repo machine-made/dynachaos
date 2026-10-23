@@ -12,7 +12,7 @@ def test_sti_spine_compute_writes_golden_cache(tmp_path):
 
     assert output_path.exists()
     assert tuple(payload) == sti_spine_figure.REQUIRED_KEYS
-    np.testing.assert_array_equal(payload["schema_version"], [3])
+    np.testing.assert_array_equal(payload["schema_version"], [4])
     np.testing.assert_array_equal(payload["seed"], [20260602])
     np.testing.assert_equal(payload["source_file"][0], "src/dynachaos/cml/sti_spine_figure.py")
     np.testing.assert_allclose(payload["model_a_parameter"], [-0.01])
@@ -69,8 +69,9 @@ def test_sti_spine_tail_fit_recovers_exponential_tail():
     assert fit["n_tail"] == lengths.size
     assert fit["lam_exp"] == pytest.approx(lam, rel=0.05)
     assert fit["preferred"] == "exponential"
-    # ks_* uses the rank ECDF at each sample, so tied integer lengths inflate it
-    # (as in the cited paper values); it still ranks the true model first.
+    # The true model fits a sample from it: KS below the 5 % critical value 1.36/sqrt(n)
+    # (about 0.0096 here), with margin for the fitted parameter.
+    assert fit["ks_exp"] < 0.015
     assert fit["ks_exp"] < fit["ks_pl"]
     assert fit["bic_exp"] < fit["bic_pl"]
 
@@ -85,6 +86,8 @@ def test_sti_spine_tail_fit_recovers_power_law_tail():
     fit = sti_spine_figure.fit_tail_models(lengths, x_min=2)
 
     assert fit["alpha_pl"] == pytest.approx(alpha, rel=0.03)
+    # The support stops at 399, the fitted model at max(tail): KS stays near the 5 % value.
+    assert fit["ks_pl"] < 0.015
     assert fit["preferred"] in {"power_law", "truncated_power_law"}
     assert fit["bic_pl"] < fit["bic_exp"]
 
