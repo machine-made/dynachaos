@@ -163,6 +163,22 @@ def test_coupled_logistic_plot_attractors_writes_png(monkeypatch, tmp_path):
     assert png_path.stat().st_size > 0
 
 
+def test_coupled_logistic_plot_basins_handles_the_default_result_without_zoom(
+    monkeypatch, tmp_path
+):
+    png_path = tmp_path / "basins.png"
+    monkeypatch.setattr(coupled_logistic, "BASIN_PNG", png_path)
+
+    payload = coupled_logistic.compute_basins(
+        n_grid=6, n_transient=2, reference_transient=2, period=2, output_path=None
+    )
+    assert "basin_zoom1" not in payload
+
+    coupled_logistic.plot_basins(payload)
+
+    assert png_path.stat().st_size > 0
+
+
 def test_coupled_logistic_plot_basins_writes_png_and_marks_divergence(monkeypatch, tmp_path):
     png_path = tmp_path / "basins.png"
     monkeypatch.setattr(coupled_logistic, "BASIN_PNG", png_path)

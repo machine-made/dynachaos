@@ -642,7 +642,10 @@ def plot_attractors(data):
 
 
 def plot_basins(data):
-    """Plot the full basin (a) and its two zooms (b, c) near the invariant diagonal."""
+    """Plot the full basin (a) and its zooms (b, c) near the invariant diagonal.
+
+    A payload without zoom windows (the ``compute_basins`` default) gives panel (a) only.
+    """
     import matplotlib.pyplot as plt
     from matplotlib.colors import BoundaryNorm, ListedColormap
     from matplotlib.patches import Patch, Rectangle
@@ -669,19 +672,25 @@ def plot_basins(data):
     )
     norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5, 2.5], cmap.N)
 
+    zooms = [s for s in ("_zoom1", "_zoom2") if f"basin{s}" in data]
+    n_panels = 1 + len(zooms)
     spec = figure_spec("double")
-    fig, axes = plt.subplots(1, 3, figsize=(spec.figsize[0] * 1.35, 3.2))
+    width = spec.figsize[0] * 1.35
+    if n_panels < 3:
+        width *= n_panels / 3
+    fig, axes = plt.subplots(1, n_panels, figsize=(width, 3.2), squeeze=False)
+    axes = axes[0]
     fig.subplots_adjust(wspace=0.7, bottom=0.22)
 
     # Opaque backing: the default semi-transparent tag picks up a two-tone
     # tint from the red/blue basin field directly underneath it.
     tag_box = {"facecolor": COLORS["offwhite"], "alpha": 1.0, "pad": 1.2, "edgecolor": "none"}
-    suffixes = ("", "_zoom1", "_zoom2")
+    suffixes = ("", *zooms)
     panels = (
         ("", "(a)", f"Full basin at $a = {A_val:.5f}$"),
         ("_zoom1", "(b)", "Zoom 1 near diagonal"),
         ("_zoom2", "(c)", "Zoom 2 (high magnification)"),
-    )
+    )[:n_panels]
     for ax, (suffix, tag, title) in zip(axes, panels, strict=True):
         x = data[f"x{suffix}"]
         y = data[f"y{suffix}"]
@@ -704,7 +713,7 @@ def plot_basins(data):
         apply_axes_polish(ax, kind="double", title_loc="left", grid=False, equal=True)
 
     # Boxes that mark each zoom window on the panel it magnifies.
-    for ax, suffix, lw in ((axes[0], "_zoom1", 0.8), (axes[1], "_zoom2", 1.0)):
+    for ax, suffix, lw in zip(axes, zooms, (0.8, 1.0), strict=False):
         zx0, zx1, zy0, zy1 = data[f"rect{suffix}"]
         ax.add_patch(
             Rectangle((zx0, zy0), zx1 - zx0, zy1 - zy0, lw=lw, ec=COLORS["black"], fc="none")
