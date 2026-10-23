@@ -2336,7 +2336,7 @@ async function mountTorus(fig,body,{liveFigure,paramsMod,capText,debugTracker}){
     const hint=attachLiveHint(w,liveFigure);
     body.insertBefore(w,body.firstChild);
     const note=document.createElement("p");note.className="hint";
-    note.textContent="the image below is the published figure; three panels at fixed D values; the cloud above is computed in your browser at the map and D you choose";
+    note.textContent="Live preview with n = 2048 points by default; the static figure uses 100,000 points. The cloud above is computed in your browser at the map and D you choose; the three panels below show the published fixed-D attractors";
     body.insertBefore(note,w.nextSibling);
     let plot=null;
     const setTitle=()=>{h.textContent=titleCaps(cfg.maps[liveFigure.torusMapKind(tf.state.map)].title+", D = "+tf.state.D);};
@@ -2830,10 +2830,10 @@ async function mountInteractive(fig, opts){
         h.textContent=titleCaps(panel.title);w.insertBefore(h,c);
       }
       const p=Plot(c,panel,{
-        kind:spec.kind,
-        marks:spec.marks||[],
-        xlabel:(spec.axes&&spec.axes.x&&spec.axes.x.label)||"",
-        ylabel:(spec.axes&&spec.axes.y&&spec.axes.y.label)||"",
+        kind:panel.kind||spec.kind,
+        marks:panel.marks||spec.marks||[],
+        xlabel:(panel.axes&&panel.axes.x&&panel.axes.x.label)||(spec.axes&&spec.axes.x&&spec.axes.x.label)||"",
+        ylabel:(panel.axes&&panel.axes.y&&panel.axes.y.label)||(spec.axes&&spec.axes.y&&spec.axes.y.label)||"",
         onDomainChange:()=>{if(window.figState)window.figState.notify(fig);}});
       MOUNTED.push(p);fig._plots.push(p);
     });
