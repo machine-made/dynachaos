@@ -1,4 +1,4 @@
-# Cluster count of a globally coupled logistic map (a=1.55, N=100, eps=0.1).
+# Cluster count of a globally coupled logistic map (a=1.55, N=100) at eps=0.1 and eps=0.3.
 # Full figure: dynachaos run sec10_gcm
 from dynachaos.cml.gcm_clusters import compute_clusters
 
