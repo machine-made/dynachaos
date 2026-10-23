@@ -576,7 +576,7 @@ def test_comoving_zero_crossings_interpolate_between_grid_points():
 def test_sec08_comoving_cache_shows_convective_instability_and_wide_window():
     from dynachaos.diagnostics.comoving_lyapunov import comoving_zero_crossings
 
-    with np.load("figures/sec08_sti/comoving_lyapunov.npz", allow_pickle=False) as data:
+    with np.load(comoving_figure.OUTPUT_NPZ, allow_pickle=False) as data:
         v = data["v_values"]
         a_values = data["a_values"]
         N, T, w, i0 = (int(data[key][0]) for key in ("N", "T", "w", "i0"))
