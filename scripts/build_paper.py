@@ -1465,8 +1465,8 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
 <main id="main-content">
 <article>
 {abstract_box}
-{how_to_cite_box}
 {body}
+{how_to_cite_box}
 </article>
 </main>
 </div>
