@@ -341,8 +341,8 @@ def export_lyapunov_vs_d() -> dict[str, Any]:
     if "freqs_170" in npz and "psd_170" in npz:
         freqs_170 = npz["freqs_170"]
         psd_170 = npz["psd_170"]
-        freqs_186 = npz["freqs_186"]
-        psd_186 = npz["psd_186"]
+        freqs_186 = _require(npz, "freqs_186", source)
+        psd_186 = _require(npz, "psd_186", source)
 
         psd_db_170 = 10.0 * np.log10(np.maximum(psd_170, 1e-6))
         psd_db_186 = 10.0 * np.log10(np.maximum(psd_186, 1e-6))
