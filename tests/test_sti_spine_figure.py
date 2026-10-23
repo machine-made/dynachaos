@@ -12,7 +12,7 @@ def test_sti_spine_compute_writes_golden_cache(tmp_path):
 
     assert output_path.exists()
     assert tuple(payload) == sti_spine_figure.REQUIRED_KEYS
-    np.testing.assert_array_equal(payload["schema_version"], [4])
+    np.testing.assert_array_equal(payload["schema_version"], [5])
     np.testing.assert_array_equal(payload["seed"], [20260602])
     np.testing.assert_equal(payload["source_file"][0], "src/dynachaos/cml/sti_spine_figure.py")
     np.testing.assert_allclose(payload["model_a_parameter"], [-0.01])
@@ -42,9 +42,12 @@ def test_sti_spine_compute_writes_golden_cache(tmp_path):
         assert payload[f"laminar_values_{k}"].size >= (1 if k == 0 else 2)
         assert probs.sum() == pytest.approx(1.0)
     assert payload["fit_n_tail"].shape == (3,)
-    assert np.all(payload["fit_n_tail"] > 20)
-    assert np.all(payload["fit_lam_exp"] > 0.0)
-    assert set(payload["fit_preferred"]) <= {"power_law", "exponential", "truncated_power_law"}
+    # The fully laminar lattice at eps_c has one run length: its fit is empty.
+    assert np.isnan(payload["fit_n_tail"][0])
+    assert payload["fit_preferred"][0] == "none"
+    assert np.all(payload["fit_n_tail"][1:] > 20)
+    assert np.all(payload["fit_lam_exp"][1:] > 0.0)
+    assert set(payload["fit_preferred"][1:]) <= {"power_law", "exponential", "truncated_power_law"}
 
 
 def test_sti_spine_locates_critical_coupling_by_interpolation():
@@ -94,6 +97,10 @@ def test_sti_spine_tail_fit_recovers_power_law_tail():
 
 def test_sti_spine_tail_fit_returns_empty_dict_for_short_tail():
     assert sti_spine_figure.fit_tail_models(np.array([1, 2, 2, 3, 5]), x_min=2) == {}
+
+
+def test_sti_spine_tail_fit_returns_empty_dict_for_a_single_run_length():
+    assert sti_spine_figure.fit_tail_models(np.full(1000, 512), x_min=2) == {}
 
 
 def test_sti_spine_plot_writes_png(tmp_path):

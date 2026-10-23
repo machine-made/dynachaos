@@ -25,7 +25,7 @@ OUTPUT_NPZ = FIG_DIR / "sti_spine.npz"
 OUTPUT_PNG = FIG_DIR / "sti_spine.png"
 _THIS_FILE = Path(__file__).resolve()
 
-SCHEMA_VERSION = 4  # 4: KS distance at support values (tied integer lengths)
+SCHEMA_VERSION = 5  # 5: no tail fit when all tail lengths are equal; 4: KS at support values
 TURBULENT_ONSET_FRACTION = 0.001
 FIT_FIELDS = (
     "x_min",
@@ -95,14 +95,15 @@ def fit_tail_models(lengths, x_min=2):
     Discrete maximum likelihood on the support x_min..max(tail).  ``bic_*`` is
     k ln n - 2 ln L (k = 1, 1, 2 parameters) and ``ks_*`` the largest distance between the
     empirical and the model CDF.  ``preferred`` names the model of lowest BIC.  Returns an
-    empty dict when the tail has fewer than 10 values.
+    empty dict when the tail has fewer than 10 values or fewer than 2 distinct values (a fully
+    laminar lattice has one run length, so the distribution is not fitted).
     """
     from scipy.optimize import minimize
 
     lengths = np.asarray(lengths)
     tail = lengths[lengths >= x_min]
     n = len(tail)
-    if n < 10:
+    if n < 10 or np.unique(tail).size < 2:
         return {}
 
     x_max = int(np.max(tail))
