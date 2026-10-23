@@ -507,12 +507,18 @@ def main(argv=None):
         return
 
     FIG_DIR.mkdir(parents=True, exist_ok=True)
+    Ns = [int(N) for N in args.Ns]
+    path = OUTPUT_NPZ
+    if tuple(Ns) != DEFAULT_NS or args.samples != DEFAULT_SAMPLES:
+        # Keep the reproducible default cache untouched; name the file by its settings.
+        sizes = "_".join(f"{N:.0e}" for N in Ns)
+        path = OUTPUT_NPZ.with_name(f"{OUTPUT_NPZ.stem}_sizes_{sizes}_s{args.samples}.npz")
     try:
-        data = load_data()
-        print(f"Loaded {OUTPUT_NPZ} (sizes {', '.join(f'{N:.0e}' for N in data['Ns'])})")
+        data = load_data(path)
+        print(f"Loaded {path} (sizes {', '.join(f'{N:.0e}' for N in data['Ns'])})")
     except (FileNotFoundError, KeyError) as exc:
         print(f"Computing FSLE of the heterogeneous GCM ({exc})...")
-        data = compute([int(N) for N in args.Ns], args.samples)
+        data = compute(Ns, args.samples, output_path=path)
     plot(data)
 
 

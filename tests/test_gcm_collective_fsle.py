@@ -318,6 +318,27 @@ def test_main_plots_from_cache(monkeypatch, tmp_path):
     assert (tmp_path / "gcm_collective_fsle.png").stat().st_size > 0
 
 
+def test_main_custom_sizes_never_write_the_default_cache(monkeypatch, tmp_path):
+    default = tmp_path / "gcm_collective_fsle.npz"
+    monkeypatch.setattr(fsle, "FIG_DIR", tmp_path)
+    monkeypatch.setattr(fsle, "OUTPUT_NPZ", default)
+    monkeypatch.setattr(fsle, "plot", lambda data: None)
+    seen = {}
+
+    def fake_compute(Ns, samples, output_path):
+        seen["path"] = output_path
+        return {}
+
+    monkeypatch.setattr(fsle, "compute", fake_compute)
+
+    fsle.main(["--Ns", "200", "300", "--samples", "2"])
+
+    assert seen["path"] != default
+    assert seen["path"].parent == tmp_path
+    assert "2e+02_3e+02" in seen["path"].name
+    assert not default.exists()
+
+
 def test_registry_contract_matches_module_keys():
     spec = get_section("sec10_gcm")
 
