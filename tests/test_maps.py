@@ -737,7 +737,8 @@ def test_delayed_logistic_panel_labels_match_lyapunov_signs():
 
 
 def test_alignment_three_torus_orbits_match_regime_and_predicted_gali3_rate():
-    with np.load("figures/sec11_diagnostics/alignment_three_torus.npz", allow_pickle=False) as data:
+    figure_dir = Path(__file__).resolve().parents[1] / "figures" / "sec11_diagnostics"
+    with np.load(figure_dir / "alignment_three_torus.npz", allow_pickle=False) as data:
         regimes = [str(r) for r in data["regimes"]]
         spectrum = data["spectrum"]
         se = data["spectrum_se"]
