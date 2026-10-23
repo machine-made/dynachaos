@@ -736,16 +736,34 @@ def test_delayed_logistic_panel_labels_match_lyapunov_signs():
                 assert abs(lam) <= 1e-3, f"{label=} at D={D} must have lambda1 near zero, got {lam}"
 
 
-def test_sali_curves_store_measured_lambda1_regime_context():
-    with np.load("figures/sec11_diagnostics/sali_comparison.npz", allow_pickle=False) as data:
-        DB_values = data["DB_values"]
-        lambda1_values = data["lambda1_values"]
+def test_alignment_three_torus_orbits_match_regime_and_predicted_gali3_rate():
+    with np.load("figures/sec11_diagnostics/alignment_three_torus.npz", allow_pickle=False) as data:
+        regimes = [str(r) for r in data["regimes"]]
+        spectrum = data["spectrum"]
+        se = data["spectrum_se"]
+        rate_fit = data["rate_fit"]
+        rate_pred = data["rate_pred"]
+        rate_pred_se = data["rate_pred_se"]
 
-    np.testing.assert_allclose(DB_values, np.array([2.35, 2.37, 2.47, 2.55]))
-    assert abs(lambda1_values[0]) <= 1e-3
-    assert abs(lambda1_values[1]) <= 1e-3
-    assert lambda1_values[2] > 1e-3
-    assert lambda1_values[3] > 5e-2
+    assert regimes == ["torus", "torus", "partial locking", "chaos"]
+    for i, regime in enumerate(regimes):
+        lam, band = spectrum[i], 2.0 * se[i]
+        if regime == "torus":
+            assert abs(lam[0]) <= band[0] and abs(lam[1]) <= band[1], (regime, lam, se[i])
+            assert lam[2] < 0.0, (regime, lam)
+        elif regime == "partial locking":
+            assert abs(lam[0]) <= band[0], (regime, lam, se[i])
+            assert lam[1] < -band[1], (regime, lam, se[i])
+        else:
+            assert lam[0] > band[0], (regime, lam, se[i])
+        # GALI_3 is column 1 (k = 2, 3, 4); the fitted rate is the mean over seeds.
+        fitted = rate_fit[i, :, 1].mean()
+        assert abs(fitted - rate_pred[i, 1]) <= 3.0 * rate_pred_se[i, 1], (
+            regime,
+            fitted,
+            rate_pred[i, 1],
+            rate_pred_se[i, 1],
+        )
 
 
 def test_sec06_canonical_lyapunov_cache_replaces_duplicate_D2_file():

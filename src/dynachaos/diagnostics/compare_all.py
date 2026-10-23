@@ -2,11 +2,12 @@
 """
 compare_all: Apply modern diagnostics to Kaneko's maps (Section 11).
 
-Applies all four modern diagnostic tools to representative Kaneko maps:
+Applies three modern diagnostic tools to representative Kaneko maps:
   1. 0-1 test for chaos
-  2. SALI (Smaller Alignment Index)
-  3. Permutation entropy and complexity-entropy plane
-  4. Recurrence Quantification Analysis
+  2. Permutation entropy and complexity-entropy plane
+  3. Recurrence Quantification Analysis
+
+The SALI/GALI comparison lives in alignment_three_torus.
 
 Maps tested:
   - Logistic map (1D): periodic vs chaotic regimes
@@ -27,20 +28,11 @@ from dynachaos.diagnostics.compare_all_helpers import (
     sweep_scalar_metric,
 )
 from dynachaos.io.paths import section_dir
-from dynachaos.maps.coupled_delayed import (
-    coupled_delayed as _coupled_delayed_map,
-)
-from dynachaos.maps.coupled_delayed import (
-    coupled_delayed_jac as _coupled_delayed_jac,
-)
 
 FIG_DIR = section_dir("sec11_diagnostics")
 
 TEST01_NPZ = FIG_DIR / "test01_sweep.npz"
 TEST01_PNG = FIG_DIR / "test01_sweep.png"
-SALI_NPZ = FIG_DIR / "sali_comparison.npz"
-SALI_PNG = FIG_DIR / "sali_comparison.png"
-COUPLED_LYAP_NPZ = section_dir("sec06_three_torus") / "lyapunov_vs_DB.npz"
 PE_NPZ = FIG_DIR / "permutation_entropy.npz"
 PE_PNG = FIG_DIR / "permutation_entropy.png"
 CH_NPZ = FIG_DIR / "complexity_entropy_plane.npz"
@@ -72,60 +64,6 @@ def compute_01_test():
 
     np.savez_compressed(TEST01_NPZ, a=a_values, K=K_values)
     print(f"Saved {TEST01_NPZ}")
-
-
-# ---------------------------------------------------------------------------
-# SALI comparison
-# ---------------------------------------------------------------------------
-
-SALI_CASES = [
-    (2.35, "3-torus"),
-    (2.37, "locking"),
-    (2.47, "onset of chaos"),
-    (2.55, "developed chaos"),
-]
-
-
-def _sali_lambda1_values(DB_values, *, eps=5e-3):
-    with np.load(COUPLED_LYAP_NPZ, allow_pickle=False) as data:
-        DB_grid = data["DB"]
-        spectra = data[f"eps_{eps:g}_spectra"]
-        return np.array([spectra[np.argmin(np.abs(DB_grid - DB)), 0] for DB in DB_values])
-
-
-def compute_sali():
-    """SALI time series for coupled delayed logistic (4D) at various regimes.
-
-    Uses the 4D coupled delayed logistic map so that SALI has enough
-    dimensions to distinguish torus from chaos — in 2D, both deviation
-    vectors must align regardless of dynamics (only the decay rate differs).
-    """
-    FIG_DIR.mkdir(parents=True, exist_ok=True)
-    from dynachaos.diagnostics.sali_gali import sali
-
-    A = 0.4
-    eps = 5e-3
-
-    results = {}
-    for DB, label in SALI_CASES:
-        DA = DB + 0.1
-        print(f"  SALI: DB={DB} ({label})")
-        x0 = np.array([0.5, 0.5, 0.3, 0.3])
-
-        def f(s, _DA=DA, _DB=DB):
-            return _coupled_delayed_map(s, A, _DA, _DB, eps)
-
-        def jac(s, _DA=DA, _DB=DB):
-            return _coupled_delayed_jac(s, A, _DA, _DB, eps)
-
-        s = sali(f, jac, x0, n_iter=10_000, n_transient=5000)
-        results[f"DB_{DB}_sali"] = s
-
-    DB_values = np.array([case[0] for case in SALI_CASES])
-    results["DB_values"] = DB_values
-    results["lambda1_values"] = _sali_lambda1_values(DB_values, eps=eps)
-    np.savez_compressed(SALI_NPZ, **results)
-    print(f"Saved {SALI_NPZ}")
 
 
 # ---------------------------------------------------------------------------
@@ -299,86 +237,6 @@ def plot_01_test(data):
     fig.savefig(TEST01_PNG, dpi=600, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {TEST01_PNG}")
-
-
-def _mathtext_sci(value, sig=2):
-    """Format a float as consistent mathtext scientific notation, e.g. 9.46e-06."""
-    mantissa, exponent = f"{value:.{sig}e}".split("e")
-    return rf"{mantissa} \times 10^{{{int(exponent)}}}"
-
-
-def plot_sali(data):
-    """Plot SALI time series for different dynamical regimes."""
-    import matplotlib.pyplot as plt
-
-    from dynachaos.utils.style import (
-        COLORS,
-        apply_axes_polish,
-        color_for,
-        figure_spec,
-        finalize_legend,
-        marker_for,
-        reference_line,
-        setup,
-    )
-
-    setup()
-
-    DB_values = data["DB_values"]
-    labels = [case[1] for case in SALI_CASES]
-    lambda1_values = data["lambda1_values"]
-
-    spec = figure_spec("double")
-    fig, ax = plt.subplots(figsize=spec.figsize)
-    for idx, DB in enumerate(DB_values):
-        s = data[f"DB_{DB}_sali"]
-        # Avoid log(0)
-        floor = 1e-16
-        valid = s > floor
-        s_safe = np.where(valid, s, floor)
-        n = np.arange(len(s))
-        lam_str = _mathtext_sci(lambda1_values[idx])
-        label = rf"$D_B={DB}$ ({labels[idx]}, $\lambda_1={lam_str}$)"
-        ax.semilogy(
-            n,
-            s_safe,
-            lw=1.1,
-            color=color_for(idx),
-            label=label,
-        )
-        # Only mark points that are genuinely above the machine-underflow
-        # floor: once a curve saturates at 1e-16, drawing periodic markers
-        # along the clipped floor reads as a separate dataset lying on the
-        # frame rather than as a saturated series.
-        step = max(len(s) // 14, 1)
-        marker_idx = n[::step]
-        marker_idx = marker_idx[valid[marker_idx]]
-        ax.plot(
-            marker_idx,
-            s_safe[marker_idx],
-            linestyle="none",
-            marker=marker_for(idx),
-            markersize=3.0,
-            color=color_for(idx),
-            markerfacecolor=COLORS["offwhite"],
-            markeredgewidth=0.8,
-        )
-
-    ax.set_xlabel("Iteration $n$")
-    ax.set_ylabel("SALI")
-    ax.set_title(
-        r"SALI: coupled delayed logistic map, $\alpha = 0.4$, "
-        r"$\varepsilon = 5 \times 10^{-3}$",
-        loc="left",
-    )
-    apply_axes_polish(ax, kind="double", title_loc="left")
-    ax.set_ylim(1e-16, 10)
-    reference_line(ax, 1e-16, lw=0.7, alpha=0.55)
-    finalize_legend(ax, kind="double", loc="lower left")
-
-    fig.savefig(SALI_PNG, dpi=600, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved {SALI_PNG}")
 
 
 def plot_permutation_entropy(data):
@@ -556,20 +414,6 @@ def main():
 
     sections = [
         ("0-1 test", TEST01_NPZ, compute_01_test, plot_01_test, ("a", "K")),
-        (
-            "SALI",
-            SALI_NPZ,
-            compute_sali,
-            plot_sali,
-            (
-                "DB_values",
-                "lambda1_values",
-                "DB_2.35_sali",
-                "DB_2.37_sali",
-                "DB_2.47_sali",
-                "DB_2.55_sali",
-            ),
-        ),
         (
             "Permutation entropy",
             PE_NPZ,

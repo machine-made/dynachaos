@@ -1186,28 +1186,6 @@ def test_compare_all_plot_01_test_accepts_data_dict():
         plt.Figure.savefig = original_savefig
 
 
-def test_compare_all_plot_sali_writes_png(monkeypatch, tmp_path):
-    from dynachaos.diagnostics import compare_all
-
-    png_path = tmp_path / "sali_comparison.png"
-    monkeypatch.setattr(compare_all, "SALI_PNG", png_path)
-
-    DB_values = np.array([case[0] for case in compare_all.SALI_CASES])
-    n = np.arange(200)
-    data = {
-        "DB_values": DB_values,
-        "lambda1_values": np.array([-0.01, -0.002, 0.001, 0.02]),
-    }
-    for DB in DB_values:
-        # Decays toward the machine-underflow floor so the "valid" mask and
-        # marker-thinning branch (compare_all.py:349-365) both fire.
-        data[f"DB_{DB}_sali"] = np.maximum(1.0 * np.exp(-n / 30.0), 1e-16)
-
-    compare_all.plot_sali(data)
-
-    assert png_path.stat().st_size > 0
-
-
 def test_compare_all_plot_permutation_entropy_writes_png(monkeypatch, tmp_path):
     from dynachaos.diagnostics import compare_all
 
@@ -1264,10 +1242,10 @@ def test_compare_all_plot_rqa_writes_png(monkeypatch, tmp_path):
     assert png_path.stat().st_size > 0
 
 
-def test_compare_all_main_computes_all_five_sections_when_cache_missing(monkeypatch, tmp_path):
-    # compute_01_test/compute_sali/compute_permutation_entropy/
+def test_compare_all_main_computes_all_four_sections_when_cache_missing(monkeypatch, tmp_path):
+    # compute_01_test/compute_permutation_entropy/
     # compute_complexity_entropy/compute_rqa take no arguments and are
-    # hardcoded to paper-scale sweeps (500/4/500+300/200+200/80 points, each
+    # hardcoded to paper-scale sweeps (500/500+300/200+200/80 points, each
     # built from thousands of scalar map iterations per point) --
     # compare_all.py:57-250 -- so main()'s compute path is exercised here
     # with fast stand-ins instead of the real compute_* functions.
@@ -1276,8 +1254,6 @@ def test_compare_all_main_computes_all_five_sections_when_cache_missing(monkeypa
     monkeypatch.setattr(compare_all, "FIG_DIR", tmp_path)
     monkeypatch.setattr(compare_all, "TEST01_NPZ", tmp_path / "test01_sweep.npz")
     monkeypatch.setattr(compare_all, "TEST01_PNG", tmp_path / "test01_sweep.png")
-    monkeypatch.setattr(compare_all, "SALI_NPZ", tmp_path / "sali_comparison.npz")
-    monkeypatch.setattr(compare_all, "SALI_PNG", tmp_path / "sali_comparison.png")
     monkeypatch.setattr(compare_all, "PE_NPZ", tmp_path / "permutation_entropy.npz")
     monkeypatch.setattr(compare_all, "PE_PNG", tmp_path / "permutation_entropy.png")
     monkeypatch.setattr(compare_all, "CH_NPZ", tmp_path / "complexity_entropy_plane.npz")
@@ -1288,17 +1264,6 @@ def test_compare_all_main_computes_all_five_sections_when_cache_missing(monkeypa
     def fake_01_test():
         a = np.linspace(1.0, 2.0, 5)
         np.savez_compressed(compare_all.TEST01_NPZ, a=a, K=np.linspace(0.0, 1.0, 5))
-
-    def fake_sali():
-        DB_values = np.array([case[0] for case in compare_all.SALI_CASES])
-        payload = {
-            "DB_values": DB_values,
-            "lambda1_values": np.linspace(-0.01, 0.02, len(DB_values)),
-        }
-        n = np.arange(50)
-        for DB in DB_values:
-            payload[f"DB_{DB}_sali"] = np.maximum(np.exp(-n / 10.0), 1e-16)
-        np.savez_compressed(compare_all.SALI_NPZ, **payload)
 
     def fake_pe():
         np.savez_compressed(
@@ -1332,7 +1297,6 @@ def test_compare_all_main_computes_all_five_sections_when_cache_missing(monkeypa
         )
 
     monkeypatch.setattr(compare_all, "compute_01_test", fake_01_test)
-    monkeypatch.setattr(compare_all, "compute_sali", fake_sali)
     monkeypatch.setattr(compare_all, "compute_permutation_entropy", fake_pe)
     monkeypatch.setattr(compare_all, "compute_complexity_entropy", fake_ch)
     monkeypatch.setattr(compare_all, "compute_rqa", fake_rqa)
@@ -1341,7 +1305,6 @@ def test_compare_all_main_computes_all_five_sections_when_cache_missing(monkeypa
 
     for png_name in (
         "test01_sweep.png",
-        "sali_comparison.png",
         "permutation_entropy.png",
         "complexity_entropy_plane.png",
         "rqa_measures.png",

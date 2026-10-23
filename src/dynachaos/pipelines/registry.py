@@ -612,7 +612,6 @@ SECTION_SPECS = {
         ),
         cache_files=(
             "test01_sweep.npz",
-            "sali_comparison.npz",
             "permutation_entropy.npz",
             "complexity_entropy_plane.npz",
             "rqa_measures.npz",
@@ -621,12 +620,10 @@ SECTION_SPECS = {
         ),
         output_files=(
             "test01_sweep.npz",
-            "sali_comparison.npz",
             "permutation_entropy.npz",
             "complexity_entropy_plane.npz",
             "rqa_measures.npz",
             "test01_sweep.png",
-            "sali_comparison.png",
             "permutation_entropy.png",
             "complexity_entropy_plane.png",
             "rqa_measures.png",
@@ -637,7 +634,6 @@ SECTION_SPECS = {
         ),
         npz_contracts=(
             NpzContract("test01_sweep.npz", ("a", "K")),
-            NpzContract("sali_comparison.npz", ("DB_values", "lambda1_values")),
             NpzContract("permutation_entropy.npz", ("a", "H_logistic", "D", "H_delayed")),
             NpzContract(
                 "complexity_entropy_plane.npz",
@@ -686,12 +682,6 @@ SECTION_SPECS = {
                 "test01_sweep.npz",
                 "dynachaos.diagnostics.compare_all",
                 "examples/snippets/sec11_diagnostics/test01_sweep.py",
-            ),
-            FigureSpec(
-                "sali_comparison.png",
-                "sali_comparison.npz",
-                "dynachaos.diagnostics.compare_all",
-                "examples/snippets/sec11_diagnostics/sali_comparison.py",
             ),
             FigureSpec(
                 "permutation_entropy.png",

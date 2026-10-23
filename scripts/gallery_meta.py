@@ -126,10 +126,6 @@ CAPTIONS: dict[str, str] = {
         "The 0-1 test statistic for the logistic map, near 0 in periodic windows and near 1 "
         "in chaotic bands."
     ),
-    "sec11_diagnostics/sali_comparison.png": (
-        "SALI time series for the coupled delayed logistic map across regimes from "
-        "quasiperiodic motion to chaos."
-    ),
     "sec11_diagnostics/alignment_three_torus.png": (
         "SALI and GALI_2 to GALI_4 over 10^6 iterates for a torus, a partially locked orbit and "
         "a chaotic orbit of the coupled delayed logistic map, on a logarithmic iteration axis."
