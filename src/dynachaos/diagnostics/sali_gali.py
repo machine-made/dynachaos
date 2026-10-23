@@ -180,3 +180,88 @@ def sali_at_time(f, jac, x0, n_iter=10_000, n_transient=1000, rng=None):
     """
     vals = sali(f, jac, x0, n_iter, n_transient, rng)
     return vals[-1]
+
+
+def alignment_indices(f, jac, x0, k=4, n_iter=10_000, n_transient=1000, rng=None):
+    """Return log10 GALI_j (j = 1..k) at every iteration, without a floor.
+
+    :func:`gali` multiplies singular values of the normalised deviation
+    vectors.  Double precision cannot resolve a GALI below about 1e-16, so a
+    decaying index stops at that floor.  This function keeps the log of the
+    volume instead.
+
+    The deviation frame is written as ``W = Q S``.  ``Q`` has orthonormal
+    columns and ``S`` is upper triangular with unit-norm columns.  One step
+    is ``J Q = Q' R``, then ``S' = (R S) / column norms``.  Because ``S`` is
+    triangular, the product of its first ``j`` diagonal entries is the volume
+    of the first ``j`` normalised vectors, i.e. GALI_j.  The diagonal is
+    accumulated as a log and re-inserted, so it never underflows.
+
+    The nested frames share one set of ``k`` initial vectors.  Column ``j``
+    of the frame never depends on columns after ``j``.
+
+    Parameters
+    ----------
+    f, jac, x0, n_iter, n_transient, rng
+        As in :func:`gali`.
+    k : int
+        Number of deviation vectors, at most the dimension of the map.
+
+    Returns
+    -------
+    log10_gali : ndarray, shape (n_iter, k)
+        Column ``j - 1`` holds log10 GALI_j.  Column 0 is zero.  Column 1
+        is log10 GALI_2.
+
+    Raises
+    ------
+    FloatingPointError
+        If the orbit or the frame stops being finite.
+    """
+    x = np.asarray(x0, dtype=np.float64).copy()
+    dim = len(x)
+    if not 1 <= k <= dim:
+        raise ValueError("k must be between 1 and the dimension of the map")
+    if rng is None:
+        rng = np.random.default_rng(42)
+
+    for _ in range(n_transient):
+        x = f(x)
+
+    Q = _random_orthonormal(dim, k, rng)
+    S = np.eye(k)
+    log_diag = np.zeros(k)  # natural log of |S_ii|
+    sign = np.ones(k)
+    out = np.empty((n_iter, k))
+    idx = np.arange(k)
+
+    for i in range(n_iter):
+        J = jac(x)
+        x = f(x)
+        Q, R = np.linalg.qr(J @ Q)
+        T = R @ S
+        norms = np.sqrt(np.einsum("ij,ij->j", T, T))
+        r_diag = np.diag(R)
+        log_diag += np.log(np.abs(r_diag)) - np.log(norms)
+        sign *= np.sign(r_diag)
+        S = T / norms
+        S[idx, idx] = sign * np.exp(log_diag)
+        out[i] = np.cumsum(log_diag)
+
+    if not (np.all(np.isfinite(out)) and np.all(np.isfinite(x))):
+        raise FloatingPointError("non-finite alignment index")
+    return out / np.log(10.0)
+
+
+def log10_sali_from_gali2(log10_gali2):
+    """log10 SALI from log10 GALI_2 of the same two normalised vectors.
+
+    With angle ``theta`` between the vectors, GALI_2 = sin(theta) and
+    SALI = 2 sin(min(theta, pi - theta) / 2).  Hence
+    SALI = GALI_2 * sqrt(2 / (1 + sqrt(1 - GALI_2**2))).  The factor lies in
+    [1, sqrt(2)] and tends to 1 as the vectors align, so SALI follows GALI_2
+    far below the 1e-16 floor of :func:`sali`.
+    """
+    lg = np.asarray(log10_gali2, dtype=np.float64)
+    g = 10.0**lg
+    return lg + 0.5 * np.log10(2.0 / (1.0 + np.sqrt(np.maximum(1.0 - g * g, 0.0))))
