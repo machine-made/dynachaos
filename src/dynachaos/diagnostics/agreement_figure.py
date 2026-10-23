@@ -270,8 +270,8 @@ def plot_agreement(data):
             ax,
             kind="double",
             loc="upper center",
-            bbox_to_anchor=(0.5, -0.25),
-            ncol=2,
+            bbox_to_anchor=(0.5, -0.22),
+            ncol=1,
             title=f"AUC; {n_c} chaotic, {n_r} regular",
             title_fontsize=figure_spec("double").legend_size,
         )

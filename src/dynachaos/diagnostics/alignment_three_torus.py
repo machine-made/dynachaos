@@ -180,9 +180,18 @@ def compute_alignment(orbits=None, n_transient=None, n_iter=None, seeds=SEEDS):
     print(f"Saved {ALIGN_NPZ}")
 
 
+def _symlog_tick_label(value, _pos):
+    """Plain number for |value| < 1000, signed power of ten above."""
+    if abs(value) < 1000:
+        return f"{value:g}"
+    sign = "-" if value < 0 else ""
+    return rf"${sign}10^{{{int(round(np.log10(abs(value))))}}}$"
+
+
 def plot_alignment(data):
     """Plot log10 of SALI and GALI_2..4 against the iteration number."""
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
 
     from dynachaos.utils.style import (
         COLORS,
@@ -222,6 +231,7 @@ def plot_alignment(data):
         ax.set_xscale("log")
         ax.set_yscale("symlog", linthresh=1.0)  # linear for |log10 index| < 1
         ax.set_ylim(top=1.0)
+        ax.yaxis.set_major_formatter(FuncFormatter(_symlog_tick_label))
         ax.set_title(f"({chr(97 + p)}) {name}", loc="left")
         if p >= 2:
             ax.set_xlabel("Iteration $n$")
