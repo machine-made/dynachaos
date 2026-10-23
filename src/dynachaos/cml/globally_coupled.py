@@ -105,6 +105,8 @@ def compute_msd_sweep(
     ``n_transient`` steps and takes the variance of ``n_sample`` values of h_n.  The
     fit is an ordinary least-squares line of the seed-averaged MSD against 1/N, so
     the intercept B is the saturation value and ``fits_B_stderr`` its standard error.
+    With ``n_seeds = 1`` the seed spread is undefined: ``msd_std`` and ``msd_stderr`` are
+    NaN and ``plot_msd`` draws no error bars.
     """
     from scipy.stats import linregress
 
@@ -127,7 +129,10 @@ def compute_msd_sweep(
                 msd_all[ia, jn, s] = np.var(h_vals)
 
     msd_mean = np.mean(msd_all, axis=2)
-    msd_std = np.std(msd_all, axis=2, ddof=1)
+    if n_seeds > 1:
+        msd_std = np.std(msd_all, axis=2, ddof=1)
+    else:
+        msd_std = np.full((n_a, n_N), np.nan)
     msd_stderr = msd_std / np.sqrt(n_seeds)
 
     inv_N = 1.0 / np.array(N_values, dtype=np.float64)
@@ -219,7 +224,7 @@ def plot_msd(data):
         ax.errorbar(
             N_values,
             msd_mean[ia],
-            yerr=msd_std[ia],
+            yerr=msd_std[ia] if np.all(np.isfinite(msd_std[ia])) else None,
             label=label,
             color=color,
             marker=sty["marker"],

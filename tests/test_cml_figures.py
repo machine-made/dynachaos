@@ -823,6 +823,28 @@ def test_globally_coupled_msd_sweep_fits_saturation_and_writes_payload(tmp_path)
         np.testing.assert_array_equal(saved["msd_all"], payload["msd_all"])
 
 
+def test_globally_coupled_msd_single_seed_has_nan_spread_and_plots_without_error_bars(
+    monkeypatch, tmp_path
+):
+    png_path = tmp_path / "gcm_msd.png"
+    monkeypatch.setattr(globally_coupled, "GCM_PNG", png_path)
+
+    payload = globally_coupled.compute_msd_sweep(
+        a_values=(1.99,),
+        N_values=(20, 40, 80, 160),
+        n_seeds=1,
+        n_transient=50,
+        n_sample=300,
+        output_path=None,
+    )
+
+    assert payload["msd_all"].shape == (1, 4, 1)
+    assert np.all(np.isnan(payload["msd_std"]))
+    assert np.all(np.isnan(payload["msd_stderr"]))
+    globally_coupled.plot_msd(payload)
+    assert png_path.stat().st_size > 0
+
+
 def test_globally_coupled_plot_distribution_writes_png(monkeypatch, tmp_path):
     png_path = tmp_path / "gcm_distribution.png"
     monkeypatch.setattr(globally_coupled, "DIST_PNG", png_path)
