@@ -19,12 +19,13 @@ fraction at a fixed threshold (K_01 > 0.5) or the area under the ROC curve
 """
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 REGULAR, CHAOTIC, MARGINAL = 0, 1, 2
 LABEL_NAMES = {REGULAR: "regular", CHAOTIC: "chaotic", MARGINAL: "marginal"}
 
 
-def label_from_spectrum(spectrum, se, n_sigma=2.0):
+def label_from_spectrum(spectrum: ArrayLike, se: ArrayLike, n_sigma: float = 2.0) -> int:
     """Label one parameter value from its Lyapunov spectrum and standard errors.
 
     Parameters
@@ -55,7 +56,9 @@ def label_from_spectrum(spectrum, se, n_sigma=2.0):
     return MARGINAL
 
 
-def label_sweep(spectra, spectra_se, n_sigma=2.0):
+def label_sweep(
+    spectra: ArrayLike, spectra_se: ArrayLike, n_sigma: float = 2.0
+) -> NDArray[np.int8]:
     """Labels for a sweep: ``spectra`` and ``spectra_se`` have shape (n_params, N)."""
     return np.array(
         [label_from_spectrum(s, e, n_sigma) for s, e in zip(spectra, spectra_se, strict=True)],
@@ -63,7 +66,7 @@ def label_sweep(spectra, spectra_se, n_sigma=2.0):
     )
 
 
-def roc_auc(scores, is_positive):
+def roc_auc(scores: ArrayLike, is_positive: ArrayLike) -> float:
     """Area under the ROC curve; ties count one half.
 
     The value is the probability that a random positive point scores above a
@@ -91,7 +94,9 @@ def roc_auc(scores, is_positive):
     return float(wins.sum() / (s_pos.size * s_neg.size))
 
 
-def roc_curve(scores, is_positive):
+def roc_curve(
+    scores: ArrayLike, is_positive: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """False- and true-positive rates for thresholds at every distinct score.
 
     Returns ``fpr, tpr`` starting at (0, 0) and ending at (1, 1).
@@ -106,7 +111,13 @@ def roc_curve(scores, is_positive):
     return np.r_[0.0, fps / fps[-1]], np.r_[0.0, tps / tps[-1]]
 
 
-def scored_agreement(scores, labels, *, threshold=None, chaotic_high=True):
+def scored_agreement(
+    scores: ArrayLike,
+    labels: ArrayLike,
+    *,
+    threshold: float | None = None,
+    chaotic_high: bool = True,
+) -> dict[str, object]:
     """Compare one diagnostic with the reference labels on the scored points.
 
     Parameters
