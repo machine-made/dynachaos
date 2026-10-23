@@ -30,6 +30,8 @@ def _write_sec02_artifacts(output_root: Path, *, include_outputs: bool = True) -
         section_dir / "k_inf.npz",
         K_inf=[0.15],
         uncertainty=[0.0],
+        k_inf_long=[0.15],
+        k_inf_shift=[0.0],
         k_low_final=[0.15],
         k_high_final=[0.15],
     )
