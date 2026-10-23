@@ -9,7 +9,7 @@ from dynachaos.maps.coupled_logistic import coupled_logistic
 eps = 0.1
 cases = (
     (1.10, "2T", np.array([0.1, 0.6])),
-    (1.25, "4T", np.array([0.1, 0.2])),
+    (1.25, "4T", np.array([0.1, 0.6])),
     (1.373, "4C", np.array([0.1, 0.2])),
 )
 
