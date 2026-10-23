@@ -28,11 +28,20 @@ from dynachaos.cml.primitives import (
 from dynachaos.cml.primitives import (
     cml_step_logistic as cml_step,
 )
-from dynachaos.io.paths import safe_load, section_dir
+from dynachaos.io.paths import load_or_compute_npz, section_dir
 
 FIG_DIR = section_dir("sec08_sti")
 CORR_NPZ = FIG_DIR / "correlation_decay.npz"
 CORR_PNG = FIG_DIR / "correlation_decay.png"
+REQUIRED_KEYS = (
+    "a_corr",
+    "r_vals",
+    "all_corr",
+    "xi_values",
+    "a_lyap",
+    "L_vals",
+    "h_density",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -296,13 +305,12 @@ def plot(data):
 
 def main():
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        data = safe_load(CORR_NPZ)
-        print(f"Loaded {CORR_NPZ}")
-    except FileNotFoundError:
-        print("Computing correlation and Lyapunov density data...")
-        compute()
-        data = safe_load(CORR_NPZ)
+    data = load_or_compute_npz(
+        CORR_NPZ,
+        "correlation and Lyapunov density data",
+        compute,
+        required_keys=REQUIRED_KEYS,
+    )
     plot(data)
 
 

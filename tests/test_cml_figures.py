@@ -409,6 +409,37 @@ def test_correlation_figure_main_computes_when_cache_missing(monkeypatch, tmp_pa
     assert png_path.stat().st_size > 0
 
 
+def test_correlation_figure_main_recomputes_stale_cache(monkeypatch, tmp_path):
+    npz_path = tmp_path / "correlation_decay.npz"
+    monkeypatch.setattr(correlation_figure, "FIG_DIR", tmp_path)
+    monkeypatch.setattr(correlation_figure, "CORR_NPZ", npz_path)
+    monkeypatch.setattr(correlation_figure, "CORR_PNG", tmp_path / "correlation_decay.png")
+    # Old schema: the density array was stored as "density", not "h_density".
+    np.savez_compressed(npz_path, density=np.zeros((2, 2)))
+    calls = []
+
+    def fake_compute():
+        calls.append(1)
+        r_vals = np.arange(0, 10)
+        a_vals = np.array([1.5, 1.7])
+        np.savez_compressed(
+            npz_path,
+            a_corr=a_vals,
+            r_vals=r_vals,
+            all_corr=np.exp(-r_vals[None, :] / np.array([[2.0], [3.0]])),
+            xi_values=np.array([2.0, 3.0]),
+            a_lyap=a_vals,
+            L_vals=np.array([10, 20]),
+            h_density=np.full((2, 2), 0.01),
+        )
+
+    monkeypatch.setattr(correlation_figure, "compute", fake_compute)
+
+    correlation_figure.main()
+
+    assert calls == [1]
+
+
 def test_correlation_figure_main_plots_from_cache_when_present(monkeypatch, tmp_path):
     npz_path = tmp_path / "correlation_decay.npz"
     png_path = tmp_path / "correlation_decay.png"
