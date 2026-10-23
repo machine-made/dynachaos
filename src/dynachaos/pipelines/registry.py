@@ -595,13 +595,19 @@ SECTION_SPECS = {
     ),
     "sec11_diagnostics": SectionSpec(
         section_id="sec11_diagnostics",
-        modules=("dynachaos.diagnostics.compare_all",),
+        modules=(
+            "dynachaos.diagnostics.compare_all",
+            "dynachaos.diagnostics.alignment_three_torus",
+            "dynachaos.diagnostics.agreement_figure",
+        ),
         cache_files=(
             "test01_sweep.npz",
             "sali_comparison.npz",
             "permutation_entropy.npz",
             "complexity_entropy_plane.npz",
             "rqa_measures.npz",
+            "alignment_three_torus.npz",
+            "agreement_scores.npz",
         ),
         output_files=(
             "test01_sweep.npz",
@@ -614,6 +620,10 @@ SECTION_SPECS = {
             "permutation_entropy.png",
             "complexity_entropy_plane.png",
             "rqa_measures.png",
+            "alignment_three_torus.npz",
+            "agreement_scores.npz",
+            "alignment_three_torus.png",
+            "agreement_roc.png",
         ),
         npz_contracts=(
             NpzContract("test01_sweep.npz", ("a", "K")),
@@ -624,6 +634,41 @@ SECTION_SPECS = {
                 ("a", "H_logistic", "C_logistic", "D", "H_delayed", "C_delayed"),
             ),
             NpzContract("rqa_measures.npz", ("D", "RR", "DET", "LAM", "ENTR")),
+            NpzContract(
+                "alignment_three_torus.npz",
+                (
+                    "DB_values",
+                    "regimes",
+                    "n_samples",
+                    "spectrum",
+                    "spectrum_se",
+                    "log10_gali",
+                    "log10_sali",
+                    "decade_min",
+                    "decade_max",
+                    "rate_fit",
+                    "rate_fit_early",
+                    "rate_pred",
+                    "rate_pred_se",
+                ),
+            ),
+            NpzContract(
+                "agreement_scores.npz",
+                tuple(
+                    f"{system}_{suffix}"
+                    for system in ("logistic", "delayed", "coupled")
+                    for suffix in (
+                        "param",
+                        "spectrum",
+                        "spectrum_se",
+                        "label",
+                        "K01",
+                        "HPE",
+                        "DET",
+                        "LAM",
+                    )
+                ),
+            ),
         ),
         figures=(
             FigureSpec(
@@ -655,6 +700,18 @@ SECTION_SPECS = {
                 "rqa_measures.npz",
                 "dynachaos.diagnostics.compare_all",
                 "examples/snippets/sec11_diagnostics/rqa_measures.py",
+            ),
+            FigureSpec(
+                "alignment_three_torus.png",
+                "alignment_three_torus.npz",
+                "dynachaos.diagnostics.alignment_three_torus",
+                "examples/snippets/sec11_diagnostics/alignment_three_torus.py",
+            ),
+            FigureSpec(
+                "agreement_roc.png",
+                "agreement_scores.npz",
+                "dynachaos.diagnostics.agreement_figure",
+                "examples/snippets/sec11_diagnostics/agreement_roc.py",
             ),
         ),
     ),

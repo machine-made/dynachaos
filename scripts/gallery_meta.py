@@ -130,6 +130,15 @@ CAPTIONS: dict[str, str] = {
         "SALI time series for the coupled delayed logistic map across regimes from "
         "quasiperiodic motion to chaos."
     ),
+    "sec11_diagnostics/alignment_three_torus.png": (
+        "SALI and GALI_2 to GALI_4 over 10^6 iterates for a torus, a partially locked orbit and "
+        "a chaotic orbit of the coupled delayed logistic map, on a logarithmic iteration axis."
+    ),
+    "sec11_diagnostics/agreement_roc.png": (
+        "ROC curves of the 0-1 test, permutation entropy and the RQA measures DET and LAM against "
+        "the sign of the largest Lyapunov exponent, for the logistic, delayed logistic and "
+        "coupled delayed logistic maps."
+    ),
     "sec11_diagnostics/permutation_entropy.png": (
         "Permutation entropy for the logistic and delayed logistic maps, low in regular "
         "windows and high in irregular ones."
