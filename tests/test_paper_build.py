@@ -502,9 +502,12 @@ def test_minify_keeps_the_space_before_an_inline_tag_only():
     assert minify("</span> <math><mi>x</mi></math>") == "</span> <math><mi>x</mi></math>"
 
 
-def test_the_lede_comes_from_the_sitelede_macro_when_the_manuscript_defines_one():
+def test_the_lede_comes_from_the_sitelede_macro_when_the_manuscript_defines_one(monkeypatch):
     """Check the page lede is the hand-written macro, not a sentence cut from the abstract."""
-    extract_meta = _load().extract_meta
+    module = _load()
+    # The abstract HTML needs pandoc, which CI does not install; the lede does not use it.
+    monkeypatch.setattr(module, "abstract_to_html", lambda raw: raw)
+    extract_meta = module.extract_meta
     tex = (
         "\\newcommand{\\sitelede}{Kaneko\u2019s papers, recomputed.}\n"
         "\\begin{abstract}\nOld work. We investigate whether it holds.\n\\end{abstract}\n"
