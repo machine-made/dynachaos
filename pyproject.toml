@@ -36,7 +36,7 @@ classifiers = [
 dependencies = ["numpy>=2.5.1", "scipy>=1.18"]
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.11", "pillow>=12.3", "fonttools>=4.63", "brotli>=1.2"]
+viz = ["matplotlib>=3.11", "pillow>=12.3", "fonttools>=4.63", "brotli>=1.2.1"]
 dev = ["pytest>=9.1", "maturin>=1.14,<2.0", "ruff>=0.16"]
 
 [project.urls]
@@ -66,8 +66,8 @@ python-source = "src"
 
 [tool.uv]
 exclude-newer = "7 days"
-# Security fixes younger than 7 days (Pillow 13.0.0, certifi 2026.10.19). Remove after 2026-10-26.
-exclude-newer-package = { pillow = false, certifi = false }
+# Security fixes younger than 7 days (Pillow 13.0.0, certifi 2026.10.19, brotli 1.2.1). Remove after 2026-10-29.
+exclude-newer-package = { pillow = false, certifi = false, brotli = false }
 package = true
 cache-keys = [
     { file = "pyproject.toml" },
@@ -107,6 +107,6 @@ dev = [
     "maturin>=1.14,<2.0",
     "ruff>=0.16",
     "fonttools>=4.63.0",
-    "brotli>=1.2.0",
+    "brotli>=1.2.1",
     "pytest-cov>=7.1.0",
 ]
