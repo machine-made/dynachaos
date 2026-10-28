@@ -329,7 +329,7 @@ body {
     html_parts.append(
         "<p>Numerical reproductions of dynamical systems and chaos phenomena. "
         '<a href="index.html">back to the paper</a> &middot; '
-        '<a href="https://github.com/openfluids/dynachaos">View on GitHub</a></p>'
+        '<a href="https://github.com/machine-made/dynachaos">View on GitHub</a></p>'
     )
     html_parts.append("</div>")
 

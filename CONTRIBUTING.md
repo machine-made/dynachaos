@@ -3,7 +3,7 @@
 Contributions are genuinely welcome, and that includes the ones that are not
 code. A bug report, a confusing docstring, a README paragraph that turned out to
 be wrong, a question that took you an hour to answer yourself — all of those are
-worth opening an [issue](https://github.com/openfluids/dynachaos/issues) for.
+worth opening an [issue](https://github.com/machine-made/dynachaos/issues) for.
 
 If you are unsure whether something is worth reporting, it probably is. Open the
 issue.
@@ -11,7 +11,7 @@ issue.
 ## Getting set up
 
 ```bash
-git clone https://github.com/openfluids/dynachaos.git
+git clone https://github.com/machine-made/dynachaos.git
 cd dynachaos
 uv sync
 ```
@@ -90,11 +90,11 @@ Only the ones that are actually enforced:
 ## Conduct and licence
 
 Everyone taking part is asked to follow the
-[openfluids Code of Conduct](https://github.com/openfluids/.github/blob/main/CODE_OF_CONDUCT.md).
+[machine-made Code of Conduct](https://github.com/machine-made/.github/blob/main/CODE_OF_CONDUCT.md).
 It is short.
 
 dynachaos is licensed under Apache-2.0, and contributions are accepted under the
 same licence. See `LICENSE` and `NOTICE`.
 
 Found a security problem? Please do not open a public issue — see the
-[security policy](https://github.com/openfluids/dynachaos/security/policy).
+[security policy](https://github.com/machine-made/dynachaos/security/policy).

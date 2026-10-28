@@ -3,7 +3,7 @@
 import importlib
 import os
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 
 def _ensure_rust_backend(env=os.environ, import_module=importlib.import_module):

@@ -1267,7 +1267,7 @@ def hero(meta: dict[str, str], body: str) -> str:
 <p class="eyebrow">Recomputed with dynachaos</p>
 <h1>{html.escape(meta["title"])}</h1>
 <p class="byline">{html.escape(meta.get("authors") or "Ricardo Frantz")}<span class="affil">{html.escape(meta.get("affil", ""))}</span></p>
-<p class="pub-meta"><time datetime="{meta.get("date", "2026-10-17")}">{meta.get("date", "2026-10-17")}</time> &middot; dynachaos {meta.get("version", "0.4.1")} &middot; <span class="pub-status">Preprint, not peer reviewed</span></p>
+<p class="pub-meta"><time datetime="{meta.get("date", "2026-10-17")}">{meta.get("date", "2026-10-17")}</time> &middot; dynachaos {meta.get("version", "0.4.2")} &middot; <span class="pub-status">Preprint, not peer reviewed</span></p>
 <p class="hero-links"><a href="gallery.html">all figures as a gallery</a> &middot; <a href="#how-to-cite">how to cite</a></p>
 <p class="lede">{html.escape(meta["lede"])}</p>
 <ul class="stats">{stats}</ul>
@@ -1386,8 +1386,8 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
     author = "Ricardo Frantz"
     pub_date = meta.get("date", "2026-10-17")
     pub_date_slash = pub_date.replace("-", "/")
-    version = meta.get("version", "0.4.1")
-    site_url = "https://openfluids.github.io/dynachaos/"
+    version = meta.get("version", "0.4.2")
+    site_url = "https://machine-made.github.io/dynachaos/"
 
     scholarly_json = json.dumps(
         {
@@ -1476,7 +1476,7 @@ def assemble(body: str, nav: str, meta: dict[str, str], js_hash: str = "") -> st
 dynachaos list
 dynachaos run all</code></pre>
 <p><a href="gallery.html">Figure index</a> &middot;
-<a href="https://github.com/openfluids/dynachaos">dynachaos on GitHub</a></p>
+<a href="https://github.com/machine-made/dynachaos">dynachaos on GitHub</a></p>
 </footer>
 <div class="lb" role="dialog" aria-modal="true" aria-label="Figure viewer">
 <button class="lb-close" type="button">close</button>

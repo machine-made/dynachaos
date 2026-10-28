@@ -109,7 +109,7 @@ package is what chaos-atlas copies into `vendor/dynachaos-wasm`. See
 
 ## Provenance
 
-- Source: openfluids/dynachaos commit `{commit}`
+- Source: machine-made/dynachaos commit `{commit}`
 - Built: {built}
 - wasm-bindgen: {bindgen}
 - Target: `{TARGET}`, `--target web` with TypeScript declarations

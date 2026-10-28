@@ -2,11 +2,11 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "dynachaos: Dynamical-systems analysis for time signals with Rust-accelerated kernels"
-version: 0.4.1
-date-released: "2026-07-28"
+version: 0.4.2
+date-released: "2026-10-28"
 authors:
   - family-names: Frantz
     given-names: Ricardo
     orcid: "https://orcid.org/0000-0001-8219-3368"
-repository-code: "https://github.com/openfluids/dynachaos"
+repository-code: "https://github.com/machine-made/dynachaos"
 license: Apache-2.0

@@ -33,11 +33,11 @@ checkout of chaos-atlas with `gh` authenticated:
 
 ```sh
 # Find the newest successful CI run on main.
-run_id=$(gh run list --repo openfluids/dynachaos --workflow ci.yml \
+run_id=$(gh run list --repo machine-made/dynachaos --workflow ci.yml \
   --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
 
 # Download just the wasm package artifact.
-gh run download "$run_id" --repo openfluids/dynachaos \
+gh run download "$run_id" --repo machine-made/dynachaos \
   --name dynachaos-wasm-pkg --dir /tmp/dynachaos-wasm-pkg
 ```
 
@@ -50,7 +50,7 @@ When the artifact is not reachable, or chaos-atlas needs a dynachaos commit
 CI has not built, build the package from a dynachaos checkout:
 
 ```sh
-git clone https://github.com/openfluids/dynachaos
+git clone https://github.com/machine-made/dynachaos
 cd dynachaos
 uv run python scripts/build_wasm_pkg.py   # writes ./pkg/
 ```

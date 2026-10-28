@@ -3,7 +3,15 @@
 Versions before 0.4.0 were private and unpublished; their entries were
 reconstructed from git history. 0.4.0 is the first public release.
 
-## Unreleased
+## 0.4.2 — 2026-10-28
+
+### Project
+
+- Links and metadata now point to `github.com/machine-made/dynachaos`: the
+  PyPI project URLs, `CITATION.cff`, the README, the contributing guide and
+  the paper page.
+- Author metadata cleaned: the name is "Ricardo Frantz" everywhere, and no
+  personal contact address is listed in `NOTICE`.
 
 ### Added
 

@@ -1,8 +1,8 @@
-![dynachaos banner](https://raw.githubusercontent.com/openfluids/dynachaos/main/assets/readme-banner-v3.jpg)
+![dynachaos banner](https://raw.githubusercontent.com/machine-made/dynachaos/main/assets/readme-banner-v3.jpg)
 
-[![CI](https://github.com/openfluids/dynachaos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/openfluids/dynachaos/actions/workflows/ci.yml)
+[![CI](https://github.com/machine-made/dynachaos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/machine-made/dynachaos/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/dynachaos.svg)](https://pypi.org/project/dynachaos/)
-[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fopenfluids%2Fdynachaos%2Fmain%2Fpyproject.toml&label=python)](https://pypi.org/project/dynachaos/)
+[![Python](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fmachine-made%2Fdynachaos%2Fmain%2Fpyproject.toml&label=python)](https://pypi.org/project/dynachaos/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 `dynachaos` analyses time signals from simulations and experiments: maps and
@@ -61,16 +61,16 @@ long-signal streaming example.
 
 ## User documentation spine
 
-- [Real-analysis user guide](https://github.com/openfluids/dynachaos/blob/main/docs/real-analysis-guide.md): input expectations,
+- [Real-analysis user guide](https://github.com/machine-made/dynachaos/blob/main/docs/real-analysis-guide.md): input expectations,
   diagnostic choice, long-signal scaling, workflow outputs, reliability metadata,
   and finite-data caveats.
-- [Example gallery](https://github.com/openfluids/dynachaos/blob/main/examples/README.md): tested recipe commands for external
+- [Example gallery](https://github.com/machine-made/dynachaos/blob/main/examples/README.md): tested recipe commands for external
   signals and long-signal streaming RQA.
-- [RQA scaling design note](https://github.com/openfluids/dynachaos/blob/main/docs/rqa-scaling-design.md): how much memory dense
+- [RQA scaling design note](https://github.com/machine-made/dynachaos/blob/main/docs/rqa-scaling-design.md): how much memory dense
   recurrence needs, and the streaming RQA design.
-- [Rust acceleration roadmap](https://github.com/openfluids/dynachaos/blob/main/docs/rust-acceleration-roadmap.md): measured
+- [Rust acceleration roadmap](https://github.com/machine-made/dynachaos/blob/main/docs/rust-acceleration-roadmap.md): measured
   acceleration claims and future kernel priorities.
-- [Claims checklist](https://github.com/openfluids/dynachaos/blob/main/docs/claims-checklist.md): wording boundaries for public
+- [Claims checklist](https://github.com/machine-made/dynachaos/blob/main/docs/claims-checklist.md): wording boundaries for public
   documentation and manuscripts.
 
 ## Config-driven signal analysis workflow
@@ -222,18 +222,18 @@ boundary: for general use on your own signals, see the quickstart and recipe
 gallery above.
 
 Eight of the thirty-seven figures are shown below; click any of them for the
-full-resolution render. **[Browse the complete gallery](https://openfluids.github.io/dynachaos/gallery.html)**
+full-resolution render. **[Browse the complete gallery](https://machine-made.github.io/dynachaos/gallery.html)**
 for all thirty-seven, in section order, with captions.
 
 | | |
 |---|---|
-| [![Arnold tongues](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec02_circle_map/arnold_tongues.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec02_circle_map/arnold_tongues.png) | [![Torus doubling in Map IV](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec04_doubling/map_IV_attractors.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec04_doubling/map_IV_attractors.png) |
+| [![Arnold tongues](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec02_circle_map/arnold_tongues.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec02_circle_map/arnold_tongues.png) | [![Torus doubling in Map IV](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec04_doubling/map_IV_attractors.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec04_doubling/map_IV_attractors.png) |
 | Rotation number over the circle-map parameter plane; the uniform wedges are frequency-locked Arnold tongues. | Torus-doubling cascade of Map (IV): a fourfold torus, an eightfold torus, and chaos. |
-| [![Double devil's staircase](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec06_three_torus/double_staircase.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec06_three_torus/double_staircase.png) | [![Torus fractalization](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec07_fractalization/fractal_attractors.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec07_fractalization/fractal_attractors.png) |
+| [![Double devil's staircase](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec06_three_torus/double_staircase.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec06_three_torus/double_staircase.png) | [![Torus fractalization](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec07_fractalization/fractal_attractors.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec07_fractalization/fractal_attractors.png) |
 | Double devil's staircase of the modulated circle map, showing locking plateaus in both rotation numbers. | A smooth torus in the delayed logistic map develops wrinkles at finer and finer scales as it fractalizes. |
-| [![Spatiotemporal intermittency](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec08_sti/spacetime_diagrams.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec08_sti/spacetime_diagrams.png) | [![Globally coupled map clusters](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec10_gcm/gcm_clusters.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec10_gcm/gcm_clusters.png) |
+| [![Spatiotemporal intermittency](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec08_sti/spacetime_diagrams.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec08_sti/spacetime_diagrams.png) | [![Globally coupled map clusters](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec10_gcm/gcm_clusters.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec10_gcm/gcm_clusters.png) |
 | Spacetime diagrams of spatiotemporal intermittency in three coupled map lattice models. | Cluster states in a globally coupled map, showing a partially ordered regime. |
-| [![Complexity-entropy plane](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec11_diagnostics/complexity_entropy_plane.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec11_diagnostics/complexity_entropy_plane.png) | [![Type-I intermittency](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/thumbs/sec12_intermittency/type_i_intermittency.webp)](https://raw.githubusercontent.com/openfluids/dynachaos/main/figures/sec12_intermittency/type_i_intermittency.png) |
+| [![Complexity-entropy plane](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec11_diagnostics/complexity_entropy_plane.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec11_diagnostics/complexity_entropy_plane.png) | [![Type-I intermittency](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/thumbs/sec12_intermittency/type_i_intermittency.webp)](https://raw.githubusercontent.com/machine-made/dynachaos/main/figures/sec12_intermittency/type_i_intermittency.png) |
 | Complexity-entropy plane locations for the logistic and delayed logistic maps. | Type-I intermittency: a tangent-bifurcation channel, laminar-length statistics, and a Lorenz reinjection channel. |
 
 ## Live figures
@@ -281,7 +281,7 @@ These commands are for working on dynachaos itself. To *use* the package, see
 Quick Start above.
 
 ```bash
-git clone https://github.com/openfluids/dynachaos.git
+git clone https://github.com/machine-made/dynachaos.git
 cd dynachaos
 uv sync
 uv run --extra viz pytest tests/ -q
@@ -327,7 +327,7 @@ kernels follow and what the browser build does and does not guarantee.
 
 Contributions are welcome, and questions and bug reports count. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for setup and the checks CI runs, and the
-[openfluids Code of Conduct](https://github.com/openfluids/.github/blob/main/CODE_OF_CONDUCT.md)
+[machine-made Code of Conduct](https://github.com/machine-made/.github/blob/main/CODE_OF_CONDUCT.md)
 for how we work together.
 
 ## Citation
@@ -340,7 +340,7 @@ If you use dynachaos in published work, please cite the software:
   title   = {dynachaos: Dynamical-systems analysis for time signals with Rust-accelerated kernels},
   year    = {2026},
   version = {0.4.0},
-  url     = {https://github.com/openfluids/dynachaos},
+  url     = {https://github.com/machine-made/dynachaos},
   license = {Apache-2.0}
 }
 ```
@@ -349,7 +349,7 @@ If you use dynachaos in published work, please cite the software:
 
 This project is licensed under Apache-2.0.
 
-Originally developed by Ricardo A S Frantz. See `LICENSE` and `NOTICE` for
+Originally developed by Ricardo Frantz. See `LICENSE` and `NOTICE` for
 license terms and attribution notices. As of v0.3.0, this project is licensed
 under Apache-2.0; earlier (unpublished) versions were MIT.
 
