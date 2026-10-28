@@ -30,6 +30,7 @@ from build_wasm import (
     TARGET,
     WASM_CRATE,
     build_module,
+    check_no_local_paths,
     ensure_wasm_bindgen,
     wasm_bindgen_version,
 )
@@ -147,6 +148,7 @@ def main() -> int:
     write_package_json(commit, bindgen)
     write_readme(commit, bindgen)
     copy_license()
+    check_no_local_paths(PKG_DIR)
     for path in sorted(PKG_DIR.iterdir()):
         if path.is_file():
             print(f"  {path.name}: {path.stat().st_size:,} bytes")

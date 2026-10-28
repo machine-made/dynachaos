@@ -89,6 +89,12 @@ jobs:
         # it here proves the package builds from a clean checkout, and the
         # upload below hands chaos-atlas a stamped artifact to vendor.
         run: uv run python scripts/build_wasm_pkg.py
+      - name: No local path in the built WebAssembly
+        # rustc embeds absolute source paths; build_wasm.py remaps them. This
+        # reads the built files, so a remap that stops working fails here and
+        # not in a published module. Both outputs are public: site/wasm goes to
+        # Pages and pkg/ is vendored into chaos-atlas.
+        run: uv run python scripts/check_wasm_paths.py site/wasm pkg
       - name: Test the vendored package
         # Node is already on the runner image, so this needs no setup-node step.
         run: node --test tests/js/pkg.js
