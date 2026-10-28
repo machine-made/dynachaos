@@ -98,8 +98,12 @@ def test_the_repository_root_is_remapped_after_the_home_folder(build_module):
 
 
 def test_no_pair_remaps_the_filesystem_root(build_module, monkeypatch):
-    monkeypatch.setenv("HOME", "/")
-    assert all(len(src) > 1 for src, _ in build_module.remap_prefixes())
+    # Path.home is patched, not $HOME: Windows reads USERPROFILE instead.
+    root = Path(Path.cwd().anchor)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: root))
+    sources = [src for src, _ in build_module.remap_prefixes()]
+    assert str(root) not in sources
+    assert str(root.resolve()) not in sources
 
 
 def test_the_build_keeps_the_callers_flags_and_adds_the_remap(build_module, monkeypatch):
@@ -115,7 +119,7 @@ def test_the_build_keeps_the_callers_flags_and_adds_the_remap(build_module, monk
 def test_the_build_keeps_encoded_flags_and_a_path_with_a_space(build_module, monkeypatch, tmp_path):
     spaced = tmp_path / "my home"
     monkeypatch.setenv("CARGO_ENCODED_RUSTFLAGS", "-C\x1fopt-level=3")
-    monkeypatch.setenv("HOME", str(spaced))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: spaced))
     flags = build_module.build_environment()["CARGO_ENCODED_RUSTFLAGS"].split("\x1f")
     assert flags[:2] == ["-C", "opt-level=3"]
     # One argument per pair, even when the folder name holds a space.

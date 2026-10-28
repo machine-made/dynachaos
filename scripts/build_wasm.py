@@ -112,8 +112,9 @@ def remap_prefixes() -> list[tuple[str, str]]:
     for prefix, replacement in wanted:
         for form in (Path(os.path.abspath(prefix)), prefix.resolve()):
             pair = (str(form), replacement)
-            # A prefix of "/" would rewrite every path, so it is never a pair.
-            if len(pair[0]) > 1 and pair not in pairs:
+            # A filesystem root ("/" or a drive root) would rewrite every path, so it
+            # is never a pair.
+            if form.parent != form and pair not in pairs:
                 pairs.append(pair)
     return pairs
 
