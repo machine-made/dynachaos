@@ -59,6 +59,13 @@ This needs the Rust toolchain with the `wasm32-unknown-unknown` target and
 a matching `wasm-bindgen` CLI; the script installs the CLI itself when the
 installed version does not match `rust/wasm/Cargo.lock`.
 
+The build remaps source paths (`remap_prefixes` in `scripts/build_wasm.py`):
+rustc would otherwise write the absolute path of the build machine, home folder
+included, into the `.wasm`. Both build scripts then run
+`scripts/check_wasm_paths.py` on their output and fail on `/home/`, `/Users/`
+or `C:\Users`. Build `pkg/` with the script, not with a bare `cargo build`,
+or the remap does not apply.
+
 ## Vendoring
 
 Copy the package into chaos-atlas and record where it came from:

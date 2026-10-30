@@ -67,6 +67,10 @@ jobs:
         # and installs the matching command line tool. The versions must agree
         # exactly or the generated glue does not match the module.
         run: uv run python scripts/build_wasm.py
+      - name: No local path in the built WebAssembly
+        # The module is public once Pages serves it. build_wasm.py already
+        # fails on a local path; this step names the check in the job log.
+        run: uv run python scripts/check_wasm_paths.py site/wasm
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
         with:
           path: site

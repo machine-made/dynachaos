@@ -24,11 +24,15 @@ import argparse
 import gzip
 import hashlib
 import json
+import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from check_wasm_paths import find_local_paths
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WASM_CRATE = PROJECT_ROOT / "rust" / "wasm"
@@ -82,6 +86,67 @@ def ensure_wasm_bindgen(required: str, *, allow_install: bool) -> None:
     subprocess.run(command, check=True)
 
 
+def remap_prefixes() -> list[tuple[str, str]]:
+    """Return the (local prefix, replacement) pairs that hide the build machine.
+
+    rustc writes absolute source paths into the module: the panic location of
+    every ``unwrap`` and index in ``rust/core``, which is a path dependency
+    outside the ``rust/wasm`` workspace, and the paths of registry crates. A
+    published module must not carry the home folder of whoever built it.
+
+    The pairs run from the widest prefix to the narrowest. rustc applies the
+    last pair that matches, so the repository root wins over the home folder
+    that contains it. Both the given and the resolved form of each prefix are
+    listed, because a symlinked checkout shows up as either.
+    """
+    home = Path.home()
+    cargo_home = Path(os.environ.get("CARGO_HOME") or home / ".cargo")
+    rustup_home = Path(os.environ.get("RUSTUP_HOME") or home / ".rustup")
+    wanted = [
+        (home, "~"),
+        (rustup_home, "/rustup"),
+        (cargo_home, "/cargo"),
+        (PROJECT_ROOT, "."),
+    ]
+    pairs: list[tuple[str, str]] = []
+    for prefix, replacement in wanted:
+        for form in (Path(os.path.abspath(prefix)), prefix.resolve()):
+            pair = (str(form), replacement)
+            # A filesystem root ("/" or a drive root) would rewrite every path, so it
+            # is never a pair.
+            if form.parent != form and pair not in pairs:
+                pairs.append(pair)
+    return pairs
+
+
+def build_environment() -> dict[str, str]:
+    """Return the environment for ``cargo build``, with path remapping added.
+
+    The flags go in ``CARGO_ENCODED_RUSTFLAGS`` so a path with a space in it
+    survives. Flags the caller already set in ``CARGO_ENCODED_RUSTFLAGS`` or
+    ``RUSTFLAGS`` are kept. The repository ``.cargo/config.toml`` only sets
+    flags for x86_64 and aarch64 targets, so nothing is lost for wasm32.
+    """
+    env = dict(os.environ)
+    if "CARGO_ENCODED_RUSTFLAGS" in env:
+        flags = [f for f in env["CARGO_ENCODED_RUSTFLAGS"].split("\x1f") if f]
+    else:
+        flags = shlex.split(env.get("RUSTFLAGS", ""))
+    flags += [f"--remap-path-prefix={src}={dst}" for src, dst in remap_prefixes()]
+    env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
+    env.pop("RUSTFLAGS", None)
+    return env
+
+
+def check_no_local_paths(directory: Path) -> None:
+    """Stop the build when a built file still carries a local path."""
+    leaks = find_local_paths([directory])
+    if leaks:
+        for leak in leaks:
+            print(f"local path in {leak.path}: {leak.marker} ({leak.count} times)", file=sys.stderr)
+        raise SystemExit(f"{directory} carries a local path; see scripts/build_wasm.py")
+
+
 def build_module() -> Path:
     """Compile the wasm crate and return the path of the built module."""
     subprocess.run(
@@ -94,6 +159,7 @@ def build_module() -> Path:
             TARGET,
             "--release",
         ],
+        env=build_environment(),
         check=True,
     )
     module = WASM_CRATE / "target" / TARGET / "release" / "dynachaos_wasm.wasm"
@@ -184,6 +250,7 @@ def main() -> int:
     ensure_wasm_bindgen(required, allow_install=not args.no_install)
     module = build_module()
     run_bindgen(module)
+    check_no_local_paths(OUT_DIR)
     manifest = write_manifest()
     print(f"wrote {OUT_DIR}")
     return check_size(manifest)

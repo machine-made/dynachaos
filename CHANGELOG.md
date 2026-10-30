@@ -150,6 +150,16 @@ reconstructed from git history. 0.4.0 is the first public release.
   `n_cut = N/10` and 100 frequencies it takes 0.34 s for N = 100000, where
   the Python path takes 15 s.
 
+### Fixed
+
+- The WebAssembly build no longer embeds the build machine's source paths.
+  rustc had written the absolute path of `rust/core` into the module, so a
+  module built in a home folder carried that folder name to every reader.
+  `scripts/build_wasm.py` now remaps the home folder, the cargo and rustup
+  folders and the repository root, and both build scripts fail if the built
+  files still hold `/home/`, `/Users/` or `C:\Users`
+  (`scripts/check_wasm_paths.py`, also a CI step).
+
 ## 0.4.1 — 2026-07-28
 
 Packaging and documentation only. No functional change to the library.
